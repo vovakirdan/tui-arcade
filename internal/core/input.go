@@ -29,6 +29,8 @@ const (
 	ActionNone    Action = iota
 	ActionUp             // W, Up arrow - move up (Pong paddle)
 	ActionDown           // S, Down arrow - move down (Pong paddle)
+	ActionLeft           // A, Left arrow - move left (Breakout paddle)
+	ActionRight          // D, Right arrow - move right (Breakout paddle)
 	ActionJump           // Space, W, Up - primary action (jump, flap) - also used as ActionUp for runners
 	ActionDuck           // S, Down - secondary action (duck, dive)
 	ActionConfirm        // Enter - confirm selection in menu
@@ -47,6 +49,10 @@ func (a Action) String() string {
 		return "Up"
 	case ActionDown:
 		return "Down"
+	case ActionLeft:
+		return "Left"
+	case ActionRight:
+		return "Right"
 	case ActionJump:
 		return "Jump"
 	case ActionDuck:

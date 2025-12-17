@@ -126,6 +126,34 @@ type PongCPU struct {
 	MaxSkill float64 `yaml:"max_skill"` // Maximum CPU skill (0-1)
 }
 
+// BreakoutConfig contains all configuration for the Breakout game.
+type BreakoutConfig struct {
+	Physics    BreakoutPhysics  `yaml:"physics"`
+	Paddle     BreakoutPaddle   `yaml:"paddle"`
+	Gameplay   BreakoutGameplay `yaml:"gameplay"`
+	Difficulty DifficultyConfig `yaml:"difficulty"`
+}
+
+// BreakoutPhysics defines physics parameters for Breakout.
+type BreakoutPhysics struct {
+	BallSpeed    int `yaml:"ball_speed"`     // Ball speed (units per tick, scaled by 1000)
+	PaddleSpeed  int `yaml:"paddle_speed"`   // Paddle speed (units per tick, scaled by 1000)
+	MaxBallSpeed int `yaml:"max_ball_speed"` // Max ball speed multiplier
+}
+
+// BreakoutPaddle defines paddle parameters for Breakout.
+type BreakoutPaddle struct {
+	Width int `yaml:"width"` // Paddle width in characters
+}
+
+// BreakoutGameplay defines gameplay parameters for Breakout.
+type BreakoutGameplay struct {
+	Lives         int `yaml:"lives"`            // Starting lives
+	BrickPoints   int `yaml:"brick_points"`     // Points per brick
+	SpeedUpEveryN int `yaml:"speed_up_every_n"` // Speed up ball every N bricks (0 = disabled)
+	SpeedUpAmount int `yaml:"speed_up_amount"`  // Speed increase per speedup
+}
+
 // DifficultyPreset represents a named difficulty level.
 type DifficultyPreset string
 

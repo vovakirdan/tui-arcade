@@ -166,3 +166,65 @@ func ApplyPongPreset(cfg *PongConfig, preset DifficultyPreset) {
 		cfg.Difficulty.InitialLevel = InitialLevelForPreset(preset)
 	}
 }
+
+// LoadBreakout loads Breakout configuration.
+// Search order: customPath -> ~/.arcade/configs/breakout.yaml -> ./configs/breakout.yaml -> embedded default
+func LoadBreakout(customPath string) (BreakoutConfig, error) {
+	var cfg BreakoutConfig
+
+	// Try custom path first
+	if customPath != "" {
+		data, err := os.ReadFile(customPath)
+		if err != nil {
+			return cfg, fmt.Errorf("failed to read config %s: %w", customPath, err)
+		}
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return cfg, fmt.Errorf("failed to parse config %s: %w", customPath, err)
+		}
+		return cfg, nil
+	}
+
+	// Try user config directory
+	if userCfgPath := userConfigPath("breakout.yaml"); userCfgPath != "" {
+		if data, err := os.ReadFile(userCfgPath); err == nil {
+			if err := yaml.Unmarshal(data, &cfg); err == nil {
+				return cfg, nil
+			}
+		}
+	}
+
+	// Try local configs directory
+	if data, err := os.ReadFile("configs/breakout.yaml"); err == nil {
+		if err := yaml.Unmarshal(data, &cfg); err == nil {
+			return cfg, nil
+		}
+	}
+
+	// Use embedded default YAML
+	if err := yaml.Unmarshal(defaultBreakoutYAML, &cfg); err != nil {
+		return DefaultBreakoutConfig(), nil // Fallback to hardcoded if embed fails
+	}
+	return cfg, nil
+}
+
+// ApplyBreakoutPreset modifies the config based on a difficulty preset.
+func ApplyBreakoutPreset(cfg *BreakoutConfig, preset DifficultyPreset) {
+	if preset == DifficultyFixed {
+		cfg.Difficulty.Enabled = false
+	} else {
+		cfg.Difficulty.Enabled = true
+		cfg.Difficulty.InitialLevel = InitialLevelForPreset(preset)
+	}
+
+	// Adjust gameplay based on difficulty
+	switch preset {
+	case DifficultyEasy:
+		cfg.Gameplay.Lives = 5
+		cfg.Paddle.Width = 10
+		cfg.Physics.BallSpeed = 250
+	case DifficultyHard:
+		cfg.Gameplay.Lives = 2
+		cfg.Paddle.Width = 6
+		cfg.Physics.BallSpeed = 400
+	}
+}

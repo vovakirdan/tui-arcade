@@ -33,6 +33,10 @@ func (km *KeyMapper) MapKey(msg tea.KeyMsg) (action core.Action, isQuit bool) {
 		return core.ActionUp, false
 	case "s", "down":
 		return core.ActionDown, false
+	case "a", "left":
+		return core.ActionLeft, false
+	case "d", "right":
+		return core.ActionRight, false
 	case " ": // Space for jump (runners)
 		return core.ActionJump, false
 	case "enter":

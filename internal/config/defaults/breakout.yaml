@@ -1,0 +1,27 @@
+# Breakout Configuration
+# Edit these values to customize gameplay
+
+physics:
+  ball_speed: 300        # Ball speed (units per tick, scaled by 1000)
+  paddle_speed: 500      # Paddle speed (units per tick, scaled by 1000)
+  max_ball_speed: 1000   # Maximum ball speed
+
+paddle:
+  width: 8               # Paddle width in characters
+
+gameplay:
+  lives: 3               # Starting number of lives
+  brick_points: 10       # Points awarded per brick destroyed
+  speed_up_every_n: 10   # Speed up ball every N bricks (0 = disabled)
+  speed_up_amount: 20    # Speed increase per speedup
+
+difficulty:
+  enabled: true          # Enable progressive difficulty
+  initial_level: 0.0     # Starting difficulty (0.0=easy, 0.5=medium, 1.0=hard)
+  progression:
+    type: "score"        # "score", "time", or "none"
+    max_at: 1000         # Score at which max difficulty is reached
+  scaling:
+    speed_multiplier: 0.5  # Ball speed increase at max (+50%)
+    gap_reduction: 0       # Not used for Breakout
+    spacing_reduction: 0   # Not used for Breakout

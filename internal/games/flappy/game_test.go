@@ -267,9 +267,9 @@ func TestPipeCollision(t *testing.T) {
 
 	// Manually create a pipe right at the player
 	g.pipes.pipes = append(g.pipes.pipes, Pipe{
-		X:         PlayerX - 1, // Overlapping with player
-		GapY:      0,           // Gap at top
-		GapHeight: 5,           // Small gap
+		X:         g.cfg.Player.X - 1, // Overlapping with player
+		GapY:      0,                  // Gap at top
+		GapHeight: 5,                  // Small gap
 		Passed:    false,
 	})
 

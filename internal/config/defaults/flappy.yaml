@@ -1,0 +1,32 @@
+# Flappy Bird Configuration
+# Edit these values to customize gameplay
+
+physics:
+  gravity: 0.3           # Downward acceleration per tick (lower = floatier)
+  jump_impulse: -5.0     # Upward velocity on jump (negative = up)
+  max_fall_speed: 8.0    # Terminal velocity
+  base_speed: 1.0        # Pipe movement speed at easy difficulty
+
+obstacles:
+  pipe_width: 5          # Width of pipes in characters
+  pipe_spacing: 40       # Horizontal distance between pipes
+  min_gap_size: 8        # Minimum gap to fly through
+  max_gap_size: 12       # Maximum gap to fly through
+  top_margin: 3          # Minimum distance from top
+  bottom_margin: 3       # Minimum distance from ground
+
+player:
+  x: 10                  # Fixed horizontal position
+  width: 2               # Hitbox width
+  height: 2              # Hitbox height
+
+difficulty:
+  enabled: true          # Enable progressive difficulty (false = fixed)
+  initial_level: 0.0     # Starting difficulty (0.0=easy, 0.5=medium, 1.0=hard)
+  progression:
+    type: "score"        # "score", "time", or "none"
+    max_at: 50           # Score at which max difficulty is reached
+  scaling:
+    speed_multiplier: 1.0   # Speed increase at max (1.0 = +100%)
+    gap_reduction: 4        # Gap shrinks by this much at max
+    spacing_reduction: 15   # Pipes get closer by this much at max

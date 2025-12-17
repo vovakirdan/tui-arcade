@@ -5,19 +5,9 @@ package flappy
 import (
 	"fmt"
 
+	"github.com/vovakirdan/tui-arcade/internal/config"
 	"github.com/vovakirdan/tui-arcade/internal/core"
 	"github.com/vovakirdan/tui-arcade/internal/registry"
-)
-
-// Physics constants - tuned for playability at 60 FPS
-const (
-	Gravity       = 0.4   // Downward acceleration per tick
-	JumpImpulse   = -6.0  // Upward velocity when jumping (negative = up)
-	MaxFallSpeed  = 10.0  // Terminal velocity
-	PipeSpeed     = 2     // How fast pipes move left per tick
-	PlayerX       = 10    // Fixed horizontal position of player
-	PlayerWidth   = 2     // Player hitbox width
-	PlayerHeight  = 2     // Player hitbox height
 )
 
 // Visual characters for rendering
@@ -31,14 +21,41 @@ const (
 
 // Game implements the Flappy Bird game logic.
 type Game struct {
-	playerY   float64       // Player vertical position (top of hitbox)
-	playerVel float64       // Player vertical velocity
-	pipes     *PipeManager  // Obstacle manager
-	score     int           // Current score
-	gameOver  bool          // Whether game has ended
-	paused    bool          // Whether game is paused
-	config    core.RuntimeConfig
-	tickCount int           // Number of ticks since start
+	playerY    float64             // Player vertical position (top of hitbox)
+	playerVel  float64             // Player vertical velocity
+	pipes      *PipeManager        // Obstacle manager
+	score      int                 // Current score
+	gameOver   bool                // Whether game has ended
+	paused     bool                // Whether game is paused
+	runtime    core.RuntimeConfig  // Runtime config (screen size, tick rate)
+	cfg        config.FlappyConfig // Game-specific config
+	difficulty *config.DifficultyManager
+	tickCount  int // Number of ticks since start
+}
+
+// configPath stores the custom config path set via CLI
+var configPath string
+var difficultyPreset config.DifficultyPreset
+
+// SetConfigPath sets the custom config path for loading.
+func SetConfigPath(path string) {
+	configPath = path
+}
+
+// SetDifficultyPreset sets the difficulty preset.
+func SetDifficultyPreset(preset string) {
+	switch preset {
+	case "easy":
+		difficultyPreset = config.DifficultyEasy
+	case "normal":
+		difficultyPreset = config.DifficultyNormal
+	case "hard":
+		difficultyPreset = config.DifficultyHard
+	case "fixed":
+		difficultyPreset = config.DifficultyFixed
+	default:
+		difficultyPreset = "" // Use config default
+	}
 }
 
 // New creates a new Flappy Bird game instance.
@@ -57,20 +74,41 @@ func (g *Game) Title() string {
 }
 
 // Reset initializes or restarts the game.
-func (g *Game) Reset(cfg core.RuntimeConfig) {
-	g.config = cfg
-	g.playerY = float64(cfg.ScreenH) / 2.0
+func (g *Game) Reset(runtime core.RuntimeConfig) {
+	g.runtime = runtime
+
+	// Load game config
+	cfg, err := config.LoadFlappy(configPath)
+	if err != nil {
+		// Use defaults on error
+		cfg = config.DefaultFlappyConfig()
+	}
+
+	// Apply difficulty preset if set
+	if difficultyPreset != "" {
+		config.ApplyFlappyPreset(&cfg, difficultyPreset)
+	}
+
+	g.cfg = cfg
+
+	// Initialize difficulty manager
+	g.difficulty = config.NewDifficultyManager(cfg.Difficulty)
+
+	// Initialize player
+	g.playerY = float64(runtime.ScreenH) / 2.0
 	g.playerVel = 0
 	g.score = 0
 	g.gameOver = false
 	g.paused = false
 	g.tickCount = 0
 
+	// Initialize pipe manager
 	if g.pipes == nil {
-		g.pipes = NewPipeManager(cfg.Seed, cfg.ScreenW, cfg.ScreenH)
+		g.pipes = NewPipeManager(runtime.Seed, runtime.ScreenW, runtime.ScreenH, &cfg, g.difficulty)
 	} else {
-		g.pipes.UpdateScreenSize(cfg.ScreenW, cfg.ScreenH)
-		g.pipes.Reset(cfg.Seed)
+		g.pipes.UpdateConfig(&cfg, g.difficulty)
+		g.pipes.UpdateScreenSize(runtime.ScreenW, runtime.ScreenH)
+		g.pipes.Reset(runtime.Seed)
 	}
 }
 
@@ -93,18 +131,18 @@ func (g *Game) Step(in core.InputFrame) core.StepResult {
 
 	// Handle jump input
 	if in.Has(core.ActionJump) {
-		g.playerVel = JumpImpulse
+		g.playerVel = g.cfg.Physics.JumpImpulse
 	}
 
 	// Apply physics
-	g.playerVel += Gravity
-	if g.playerVel > MaxFallSpeed {
-		g.playerVel = MaxFallSpeed
+	g.playerVel += g.cfg.Physics.Gravity
+	if g.playerVel > g.cfg.Physics.MaxFallSpeed {
+		g.playerVel = g.cfg.Physics.MaxFallSpeed
 	}
 	g.playerY += g.playerVel
 
-	// Update pipes and check for scoring
-	passed := g.pipes.Update(PlayerX + PlayerWidth)
+	// Update pipes with current score for difficulty calculation
+	passed := g.pipes.Update(g.cfg.Player.X+g.cfg.Player.Width, g.score, g.tickCount)
 	g.score += passed
 
 	// Check collisions
@@ -117,14 +155,14 @@ func (g *Game) Step(in core.InputFrame) core.StepResult {
 	}
 
 	// Hit bottom of screen (ground)
-	groundY := g.config.ScreenH - 2 // Leave space for ground line
-	if int(g.playerY)+PlayerHeight >= groundY {
-		g.playerY = float64(groundY - PlayerHeight)
+	groundY := g.runtime.ScreenH - 2 // Leave space for ground line
+	if int(g.playerY)+g.cfg.Player.Height >= groundY {
+		g.playerY = float64(groundY - g.cfg.Player.Height)
 		g.gameOver = true
 	}
 
 	// Hit a pipe
-	if g.pipes.CheckCollision(playerRect, g.config.ScreenH) {
+	if g.pipes.CheckCollision(playerRect, g.runtime.ScreenH) {
 		g.gameOver = true
 	}
 
@@ -133,7 +171,7 @@ func (g *Game) Step(in core.InputFrame) core.StepResult {
 
 // playerRect returns the player's collision rectangle.
 func (g *Game) playerRect() core.Rect {
-	return core.NewRect(PlayerX, int(g.playerY), PlayerWidth, PlayerHeight)
+	return core.NewRect(g.cfg.Player.X, int(g.playerY), g.cfg.Player.Width, g.cfg.Player.Height)
 }
 
 // Render draws the current game state to the screen.
@@ -151,12 +189,12 @@ func (g *Game) Render(dst *core.Screen) {
 
 	// Draw player
 	playerY := int(g.playerY)
-	for dy := 0; dy < PlayerHeight; dy++ {
-		for dx := 0; dx < PlayerWidth; dx++ {
-			if dx == PlayerWidth-1 && dy == 0 {
-				dst.Set(PlayerX+dx, playerY+dy, PlayerChar)
+	for dy := 0; dy < g.cfg.Player.Height; dy++ {
+		for dx := 0; dx < g.cfg.Player.Width; dx++ {
+			if dx == g.cfg.Player.Width-1 && dy == 0 {
+				dst.Set(g.cfg.Player.X+dx, playerY+dy, PlayerChar)
 			} else {
-				dst.Set(PlayerX+dx, playerY+dy, '●')
+				dst.Set(g.cfg.Player.X+dx, playerY+dy, '●')
 			}
 		}
 	}
@@ -164,6 +202,13 @@ func (g *Game) Render(dst *core.Screen) {
 	// Draw HUD
 	scoreText := fmt.Sprintf(" Score: %d ", g.score)
 	dst.DrawText(2, 0, scoreText)
+
+	// Show difficulty level if progression is enabled
+	if g.difficulty.IsEnabled() {
+		level := g.difficulty.Level(g.score, g.tickCount)
+		levelText := fmt.Sprintf(" Lvl: %.0f%% ", level*100)
+		dst.DrawText(dst.Width()-len(levelText)-2, 0, levelText)
+	}
 
 	if g.paused {
 		g.drawCenteredMessage(dst, "PAUSED", "Press P to resume")
@@ -177,16 +222,17 @@ func (g *Game) Render(dst *core.Screen) {
 // drawPipe renders a single pipe to the screen.
 func (g *Game) drawPipe(dst *core.Screen, p Pipe) {
 	screenH := dst.Height() - 1 // Account for ground
+	pipeWidth := g.cfg.Obstacles.PipeWidth
 
 	// Draw top section (from top of screen to gap)
 	for y := 0; y < p.GapY; y++ {
-		for x := 0; x < PipeWidth; x++ {
+		for x := 0; x < pipeWidth; x++ {
 			dst.Set(p.X+x, y, PipeChar)
 		}
 	}
 	// Cap on top section (at bottom of top section)
 	if p.GapY > 0 {
-		for x := 0; x < PipeWidth; x++ {
+		for x := 0; x < pipeWidth; x++ {
 			dst.Set(p.X+x, p.GapY-1, PipeCapTop)
 		}
 	}
@@ -194,13 +240,13 @@ func (g *Game) drawPipe(dst *core.Screen, p Pipe) {
 	// Draw bottom section (from below gap to ground)
 	bottomY := p.GapY + p.GapHeight
 	for y := bottomY; y < screenH; y++ {
-		for x := 0; x < PipeWidth; x++ {
+		for x := 0; x < pipeWidth; x++ {
 			dst.Set(p.X+x, y, PipeChar)
 		}
 	}
 	// Cap on bottom section (at top of bottom section)
 	if bottomY < screenH {
-		for x := 0; x < PipeWidth; x++ {
+		for x := 0; x < pipeWidth; x++ {
 			dst.Set(p.X+x, bottomY, PipeCapBottom)
 		}
 	}

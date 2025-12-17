@@ -5,22 +5,9 @@ package dino
 import (
 	"fmt"
 
+	"github.com/vovakirdan/tui-arcade/internal/config"
 	"github.com/vovakirdan/tui-arcade/internal/core"
 	"github.com/vovakirdan/tui-arcade/internal/registry"
-)
-
-// Physics constants - tuned for playability at 60 FPS
-const (
-	Gravity       = 0.6   // Downward acceleration per tick
-	JumpImpulse   = -10.0 // Upward velocity when jumping (negative = up)
-	MaxFallSpeed  = 15.0  // Terminal velocity
-	BaseSpeed     = 2     // Initial scroll speed
-	MaxSpeed      = 5     // Maximum scroll speed
-	SpeedIncrease = 1     // Speed increase per 500 points
-	PlayerX       = 8     // Fixed horizontal position of player
-	PlayerWidth   = 3     // Player hitbox width
-	PlayerHeight  = 3     // Player hitbox height
-	GroundOffset  = 2     // Ground position from bottom of screen
 )
 
 // Visual characters for rendering
@@ -31,22 +18,48 @@ const (
 	DinoLeg2   = '╲'
 	CactusChar = '▓'
 	GroundChar = '═'
-	SkyChar    = ' '
 )
 
 // Game implements the Dino Runner game logic.
 type Game struct {
-	playerY    float64          // Player vertical position (bottom of hitbox, relative to ground)
-	playerVel  float64          // Player vertical velocity
-	isGrounded bool             // Whether player is on the ground
-	obstacles  *ObstacleManager // Obstacle manager
-	score      int              // Current score (distance traveled)
-	gameOver   bool             // Whether game has ended
-	paused     bool             // Whether game is paused
-	config     core.RuntimeConfig
-	tickCount  int              // Number of ticks since start
-	groundY    int              // Y position of ground line
-	legFrame   int              // Animation frame for running legs
+	playerY    float64           // Player vertical position (relative to ground, negative = up)
+	playerVel  float64           // Player vertical velocity
+	isGrounded bool              // Whether player is on the ground
+	obstacles  *ObstacleManager  // Obstacle manager
+	score      int               // Current score (distance traveled)
+	gameOver   bool              // Whether game has ended
+	paused     bool              // Whether game is paused
+	runtime    core.RuntimeConfig // Runtime config (screen size, tick rate)
+	cfg        config.DinoConfig // Game-specific config
+	difficulty *config.DifficultyManager
+	tickCount  int // Number of ticks since start
+	groundY    int // Y position of ground line
+	legFrame   int // Animation frame for running legs
+}
+
+// configPath stores the custom config path set via CLI
+var configPath string
+var difficultyPreset config.DifficultyPreset
+
+// SetConfigPath sets the custom config path for loading.
+func SetConfigPath(path string) {
+	configPath = path
+}
+
+// SetDifficultyPreset sets the difficulty preset.
+func SetDifficultyPreset(preset string) {
+	switch preset {
+	case "easy":
+		difficultyPreset = config.DifficultyEasy
+	case "normal":
+		difficultyPreset = config.DifficultyNormal
+	case "hard":
+		difficultyPreset = config.DifficultyHard
+	case "fixed":
+		difficultyPreset = config.DifficultyFixed
+	default:
+		difficultyPreset = "" // Use config default
+	}
 }
 
 // New creates a new Dino Runner game instance.
@@ -65,9 +78,27 @@ func (g *Game) Title() string {
 }
 
 // Reset initializes or restarts the game.
-func (g *Game) Reset(cfg core.RuntimeConfig) {
-	g.config = cfg
-	g.groundY = cfg.ScreenH - GroundOffset
+func (g *Game) Reset(runtime core.RuntimeConfig) {
+	g.runtime = runtime
+
+	// Load game config
+	cfg, err := config.LoadDino(configPath)
+	if err != nil {
+		cfg = config.DefaultDinoConfig()
+	}
+
+	// Apply difficulty preset if set
+	if difficultyPreset != "" {
+		config.ApplyDinoPreset(&cfg, difficultyPreset)
+	}
+
+	g.cfg = cfg
+
+	// Initialize difficulty manager
+	g.difficulty = config.NewDifficultyManager(cfg.Difficulty)
+
+	// Initialize game state
+	g.groundY = runtime.ScreenH - g.cfg.Player.GroundOffset
 	g.playerY = 0 // On ground
 	g.playerVel = 0
 	g.isGrounded = true
@@ -77,21 +108,14 @@ func (g *Game) Reset(cfg core.RuntimeConfig) {
 	g.tickCount = 0
 	g.legFrame = 0
 
+	// Initialize obstacle manager
 	if g.obstacles == nil {
-		g.obstacles = NewObstacleManager(cfg.Seed, cfg.ScreenW)
+		g.obstacles = NewObstacleManager(runtime.Seed, runtime.ScreenW, &cfg, g.difficulty)
 	} else {
-		g.obstacles.UpdateScreenSize(cfg.ScreenW)
-		g.obstacles.Reset(cfg.Seed)
+		g.obstacles.UpdateConfig(&cfg, g.difficulty)
+		g.obstacles.UpdateScreenSize(runtime.ScreenW)
+		g.obstacles.Reset(runtime.Seed)
 	}
-}
-
-// getSpeed returns the current scroll speed based on score.
-func (g *Game) getSpeed() int {
-	speed := BaseSpeed + (g.score / 500) * SpeedIncrease
-	if speed > MaxSpeed {
-		speed = MaxSpeed
-	}
-	return speed
 }
 
 // Step advances the game by one tick.
@@ -114,15 +138,15 @@ func (g *Game) Step(in core.InputFrame) core.StepResult {
 
 	// Handle jump input (only when grounded)
 	if in.Has(core.ActionJump) && g.isGrounded {
-		g.playerVel = JumpImpulse
+		g.playerVel = g.cfg.Physics.JumpImpulse
 		g.isGrounded = false
 	}
 
 	// Apply physics
 	if !g.isGrounded {
-		g.playerVel += Gravity
-		if g.playerVel > MaxFallSpeed {
-			g.playerVel = MaxFallSpeed
+		g.playerVel += g.cfg.Physics.Gravity
+		if g.playerVel > g.cfg.Physics.MaxFallSpeed {
+			g.playerVel = g.cfg.Physics.MaxFallSpeed
 		}
 		g.playerY += g.playerVel
 
@@ -134,9 +158,8 @@ func (g *Game) Step(in core.InputFrame) core.StepResult {
 		}
 	}
 
-	// Update obstacles
-	speed := g.getSpeed()
-	g.obstacles.Update(speed)
+	// Update obstacles with current difficulty
+	g.obstacles.Update(g.score, g.tickCount)
 
 	// Increment score (based on distance/time)
 	g.score++
@@ -154,8 +177,8 @@ func (g *Game) Step(in core.InputFrame) core.StepResult {
 func (g *Game) playerRect() core.Rect {
 	// Player Y is relative to ground (negative = above ground)
 	// Convert to screen coordinates
-	screenY := g.groundY - PlayerHeight - int(-g.playerY)
-	return core.NewRect(PlayerX, screenY, PlayerWidth, PlayerHeight)
+	screenY := g.groundY - g.cfg.Player.Height - int(-g.playerY)
+	return core.NewRect(g.cfg.Player.X, screenY, g.cfg.Player.Width, g.cfg.Player.Height)
 }
 
 // Render draws the current game state to the screen.
@@ -177,8 +200,12 @@ func (g *Game) Render(dst *core.Screen) {
 	scoreText := fmt.Sprintf(" Score: %d ", g.score)
 	dst.DrawText(2, 0, scoreText)
 
-	speedText := fmt.Sprintf(" Speed: %d ", g.getSpeed())
-	dst.DrawText(dst.Width()-len(speedText)-2, 0, speedText)
+	// Show difficulty level if progression is enabled
+	if g.difficulty.IsEnabled() {
+		speed := g.difficulty.Speed(g.cfg.Physics.BaseSpeed, g.score, g.tickCount)
+		levelText := fmt.Sprintf(" Spd: %.1f ", speed)
+		dst.DrawText(dst.Width()-len(levelText)-2, 0, levelText)
+	}
 
 	if g.paused {
 		g.drawCenteredMessage(dst, "PAUSED", "Press P to resume")
@@ -192,38 +219,39 @@ func (g *Game) Render(dst *core.Screen) {
 // drawDino renders the player character.
 func (g *Game) drawDino(dst *core.Screen) {
 	// Player Y is relative to ground (negative = above ground)
-	baseY := g.groundY - PlayerHeight - int(-g.playerY)
+	baseY := g.groundY - g.cfg.Player.Height - int(-g.playerY)
+	playerX := g.cfg.Player.X
 
 	// Simple dino sprite (3x3)
 	//  ◆█
-	// ██
+	// ███
 	// ╱╲
 
 	// Head and body
-	dst.Set(PlayerX+1, baseY, DinoHead)
-	dst.Set(PlayerX+2, baseY, DinoBody)
+	dst.Set(playerX+1, baseY, DinoHead)
+	dst.Set(playerX+2, baseY, DinoBody)
 
 	// Body
-	dst.Set(PlayerX, baseY+1, DinoBody)
-	dst.Set(PlayerX+1, baseY+1, DinoBody)
-	dst.Set(PlayerX+2, baseY+1, DinoBody)
+	dst.Set(playerX, baseY+1, DinoBody)
+	dst.Set(playerX+1, baseY+1, DinoBody)
+	dst.Set(playerX+2, baseY+1, DinoBody)
 
 	// Legs (animated when grounded)
 	if g.isGrounded {
 		if g.legFrame < 5 {
-			dst.Set(PlayerX, baseY+2, DinoLeg1)
-			dst.Set(PlayerX+1, baseY+2, ' ')
-			dst.Set(PlayerX+2, baseY+2, DinoLeg2)
+			dst.Set(playerX, baseY+2, DinoLeg1)
+			dst.Set(playerX+1, baseY+2, ' ')
+			dst.Set(playerX+2, baseY+2, DinoLeg2)
 		} else {
-			dst.Set(PlayerX, baseY+2, ' ')
-			dst.Set(PlayerX+1, baseY+2, DinoLeg1)
-			dst.Set(PlayerX+2, baseY+2, DinoLeg2)
+			dst.Set(playerX, baseY+2, ' ')
+			dst.Set(playerX+1, baseY+2, DinoLeg1)
+			dst.Set(playerX+2, baseY+2, DinoLeg2)
 		}
 	} else {
 		// In air - legs tucked
-		dst.Set(PlayerX, baseY+2, DinoLeg1)
-		dst.Set(PlayerX+1, baseY+2, DinoLeg2)
-		dst.Set(PlayerX+2, baseY+2, ' ')
+		dst.Set(playerX, baseY+2, DinoLeg1)
+		dst.Set(playerX+1, baseY+2, DinoLeg2)
+		dst.Set(playerX+2, baseY+2, ' ')
 	}
 }
 

@@ -3,14 +3,15 @@ package dino
 import (
 	"math/rand"
 
+	"github.com/vovakirdan/tui-arcade/internal/config"
 	"github.com/vovakirdan/tui-arcade/internal/core"
 )
 
 // Cactus represents a ground obstacle the player must jump over.
 type Cactus struct {
-	X      int  // Horizontal position (left edge)
-	Width  int  // Width in characters
-	Height int  // Height in characters
+	X      int // Horizontal position (left edge)
+	Width  int // Width in characters
+	Height int // Height in characters
 }
 
 // Rect returns the collision rectangle for this cactus.
@@ -18,40 +19,40 @@ func (c Cactus) Rect(groundY int) core.Rect {
 	return core.NewRect(c.X, groundY-c.Height, c.Width, c.Height)
 }
 
-// Constants for obstacle configuration
-const (
-	MinCactusWidth  = 1
-	MaxCactusWidth  = 3
-	MinCactusHeight = 2
-	MaxCactusHeight = 4
-	MinSpacing      = 20  // Minimum distance between obstacles
-	MaxSpacing      = 40  // Maximum distance between obstacles
-)
-
 // ObstacleManager handles spawning, movement, and removal of cacti.
 type ObstacleManager struct {
 	cacti      []Cactus
 	rng        *rand.Rand
 	screenW    int
 	nextSpawnX int // X position where next cactus will spawn
+	cfg        *config.DinoConfig
+	difficulty *config.DifficultyManager
 }
 
 // NewObstacleManager creates a new obstacle manager with the given RNG seed.
-func NewObstacleManager(seed int64, screenW int) *ObstacleManager {
+func NewObstacleManager(seed int64, screenW int, cfg *config.DinoConfig, diff *config.DifficultyManager) *ObstacleManager {
 	om := &ObstacleManager{
-		cacti:   make([]Cactus, 0, 8),
-		rng:     rand.New(rand.NewSource(seed)),
-		screenW: screenW,
+		cacti:      make([]Cactus, 0, 8),
+		rng:        rand.New(rand.NewSource(seed)),
+		screenW:    screenW,
+		cfg:        cfg,
+		difficulty: diff,
 	}
 	om.Reset(seed)
 	return om
+}
+
+// UpdateConfig updates the configuration.
+func (om *ObstacleManager) UpdateConfig(cfg *config.DinoConfig, diff *config.DifficultyManager) {
+	om.cfg = cfg
+	om.difficulty = diff
 }
 
 // Reset clears all obstacles and resets the RNG.
 func (om *ObstacleManager) Reset(seed int64) {
 	om.cacti = om.cacti[:0]
 	om.rng = rand.New(rand.NewSource(seed))
-	om.nextSpawnX = om.screenW + MinSpacing // First obstacle spawns off-screen
+	om.nextSpawnX = om.screenW + om.cfg.Obstacles.MinSpacing // First obstacle spawns off-screen
 }
 
 // UpdateScreenSize updates the screen width.
@@ -60,11 +61,17 @@ func (om *ObstacleManager) UpdateScreenSize(screenW int) {
 }
 
 // Update moves obstacles left and spawns new ones as needed.
-// speed determines how fast obstacles move (increases with score).
-func (om *ObstacleManager) Update(speed int) {
+func (om *ObstacleManager) Update(score int, ticks int) {
+	// Calculate current speed based on difficulty
+	speed := om.difficulty.Speed(om.cfg.Physics.BaseSpeed, score, ticks)
+	speedInt := int(speed)
+	if speedInt < 1 {
+		speedInt = 1
+	}
+
 	// Move cacti left
 	for i := range om.cacti {
-		om.cacti[i].X -= speed
+		om.cacti[i].X -= speedInt
 	}
 
 	// Remove cacti that have moved off the left side
@@ -77,18 +84,30 @@ func (om *ObstacleManager) Update(speed int) {
 	om.cacti = validCacti
 
 	// Update next spawn position
-	om.nextSpawnX -= speed
+	om.nextSpawnX -= speedInt
 
 	// Spawn new cactus if needed
 	if om.nextSpawnX <= om.screenW {
-		om.spawnCactus()
+		om.spawnCactus(score, ticks)
 	}
 }
 
 // spawnCactus creates a new cactus at the spawn position.
-func (om *ObstacleManager) spawnCactus() {
-	width := MinCactusWidth + om.rng.Intn(MaxCactusWidth-MinCactusWidth+1)
-	height := MinCactusHeight + om.rng.Intn(MaxCactusHeight-MinCactusHeight+1)
+func (om *ObstacleManager) spawnCactus(score int, ticks int) {
+	minW := om.cfg.Obstacles.MinWidth
+	maxW := om.cfg.Obstacles.MaxWidth
+	minH := om.cfg.Obstacles.MinHeight
+	maxH := om.cfg.Obstacles.MaxHeight
+
+	width := minW
+	if maxW > minW {
+		width = minW + om.rng.Intn(maxW-minW+1)
+	}
+
+	height := minH
+	if maxH > minH {
+		height = minH + om.rng.Intn(maxH-minH+1)
+	}
 
 	cactus := Cactus{
 		X:      om.nextSpawnX,
@@ -98,8 +117,27 @@ func (om *ObstacleManager) spawnCactus() {
 
 	om.cacti = append(om.cacti, cactus)
 
-	// Set next spawn position with random spacing
-	spacing := MinSpacing + om.rng.Intn(MaxSpacing-MinSpacing+1)
+	// Calculate current spacing based on difficulty
+	baseSpacing := om.cfg.Obstacles.MaxSpacing
+	currentSpacing := om.difficulty.Spacing(baseSpacing, score, ticks)
+
+	// Ensure minimum spacing
+	minSpacing := om.cfg.Obstacles.MinSpacing
+	if currentSpacing < minSpacing {
+		currentSpacing = minSpacing
+	}
+
+	// Random variation in spacing
+	spacingRange := currentSpacing - minSpacing
+	if spacingRange < 0 {
+		spacingRange = 0
+	}
+
+	spacing := minSpacing
+	if spacingRange > 0 {
+		spacing = minSpacing + om.rng.Intn(spacingRange+1)
+	}
+
 	om.nextSpawnX += width + spacing
 }
 
@@ -116,13 +154,4 @@ func (om *ObstacleManager) CheckCollision(playerRect core.Rect, groundY int) boo
 		}
 	}
 	return false
-}
-
-// GetFirstCactusX returns the X position of the leftmost cactus, or -1 if none.
-// Used for scoring - player gets points when passing obstacles.
-func (om *ObstacleManager) GetFirstCactusX() int {
-	if len(om.cacti) == 0 {
-		return -1
-	}
-	return om.cacti[0].X
 }

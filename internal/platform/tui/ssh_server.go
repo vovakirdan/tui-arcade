@@ -262,6 +262,10 @@ type SessionModel struct {
 	game      registry.Game
 	gameModel *GameModel
 	quitting  bool
+
+	// Online game state
+	onlineGame   *pong.Game   // Local game instance for rendering from snapshots
+	onlineScreen *core.Screen // Screen buffer for online game rendering
 }
 
 // NewSessionModel creates a new session model.
@@ -416,7 +420,10 @@ func (m SessionModel) updateLobby(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Check if match started
 	if m.lobby.State() == OnlineStateInMatch {
 		m.state = SessionStateOnlineGame
-		// Online game rendering will be handled by snapshot events
+		// Initialize local game instance for rendering
+		m.onlineGame = pong.NewOnline()
+		m.onlineGame.Reset(m.config)
+		m.onlineScreen = core.NewScreen(m.config.ScreenW, m.config.ScreenH)
 		return m, m.waitForEvents()
 	}
 
@@ -508,11 +515,17 @@ func (m SessionModel) updateOnlineGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleOnlineGameKey(msg)
 	case multiplayer.SnapshotEvent:
 		// Game state snapshot received from coordinator
-		// TODO: Render game state from snapshot
+		if snap, ok := msg.Snapshot.(pong.PongSnapshot); ok {
+			if m.onlineGame != nil {
+				m.onlineGame.ApplySnapshot(snap)
+			}
+		}
 		return m, m.waitForEvents()
 	case multiplayer.MatchEndedEvent:
 		// Match ended - return to menu
 		m.state = SessionStateMenu
+		m.onlineGame = nil
+		m.onlineScreen = nil
 		m.menu = NewMenuModel(m.store, m.config)
 		return m, m.menu.Init()
 	}
@@ -597,23 +610,18 @@ func (m SessionModel) View() string {
 
 // viewOnlineGame renders the online game view based on latest snapshot.
 func (m SessionModel) viewOnlineGame() string {
-	// For now, show a placeholder. Later we'll render from snapshots.
-	var b strings.Builder
+	// Render actual game if available
+	if m.onlineGame != nil && m.onlineScreen != nil {
+		m.onlineGame.Render(m.onlineScreen)
+		return RenderScreen(m.onlineScreen)
+	}
 
+	// Fallback placeholder (should not normally reach here)
+	var b strings.Builder
 	b.WriteString("\n")
 	b.WriteString(centerText("ONLINE PONG", m.config.ScreenW))
 	b.WriteString("\n\n")
-
-	sideText := "LEFT (P1)"
-	if m.lobby.Side() == core.Player2 {
-		sideText = "RIGHT (P2)"
-	}
-	b.WriteString(centerText(fmt.Sprintf("You are: %s", sideText), m.config.ScreenW))
-	b.WriteString("\n\n")
-	b.WriteString(centerText("Game in progress...", m.config.ScreenW))
-	b.WriteString("\n\n")
-	b.WriteString(centerText("W/Up: Move up  |  S/Down: Move down  |  Esc: Leave", m.config.ScreenW))
-
+	b.WriteString(centerText("Waiting for game data...", m.config.ScreenW))
 	return b.String()
 }
 

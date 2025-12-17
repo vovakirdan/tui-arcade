@@ -40,7 +40,7 @@ func NewMenuModel(store *storage.Store, cfg core.RuntimeConfig) MenuModel {
 
 	for _, g := range games {
 		// Skip endless modes - they're accessible via sub-menus
-		if g.ID == "breakout_endless" || g.ID == "snake_endless" {
+		if g.ID == "breakout_endless" || g.ID == "snake_endless" || g.ID == "2048_endless" {
 			continue
 		}
 

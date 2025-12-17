@@ -22,6 +22,7 @@ import (
 	"github.com/vovakirdan/tui-arcade/internal/games/breakout"
 	"github.com/vovakirdan/tui-arcade/internal/games/pong"
 	"github.com/vovakirdan/tui-arcade/internal/games/snake"
+	"github.com/vovakirdan/tui-arcade/internal/games/t2048"
 	"github.com/vovakirdan/tui-arcade/internal/multiplayer"
 	"github.com/vovakirdan/tui-arcade/internal/registry"
 	"github.com/vovakirdan/tui-arcade/internal/storage"
@@ -244,6 +245,7 @@ const (
 	SessionStatePongMode
 	SessionStateBreakoutMode
 	SessionStateSnakeMode
+	SessionStateT2048Mode
 	SessionStateOnlineLobby
 	SessionStateInGame
 	SessionStateOnlineGame
@@ -264,6 +266,7 @@ type SessionModel struct {
 	pongMode     PongModeModel
 	breakoutMode BreakoutModeModel
 	snakeMode    SnakeModeModel
+	t2048Mode    T2048ModeModel
 	lobby        OnlineLobbyModel
 	game         registry.Game
 	gameModel    *GameModel
@@ -317,6 +320,8 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateBreakoutMode(msg)
 	case SessionStateSnakeMode:
 		return m.updateSnakeMode(msg)
+	case SessionStateT2048Mode:
+		return m.updateT2048Mode(msg)
 	case SessionStateOnlineLobby:
 		return m.updateLobby(msg)
 	case SessionStateInGame:
@@ -365,6 +370,13 @@ func (m SessionModel) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = SessionStateSnakeMode
 			m.snakeMode = NewSnakeModeModel(m.config.ScreenW, m.config.ScreenH)
 			return m, m.snakeMode.Init()
+		}
+
+		// Special handling for 2048 - show mode/level selection
+		if selected.GameID == "2048" {
+			m.state = SessionStateT2048Mode
+			m.t2048Mode = NewT2048ModeModel(m.config.ScreenW, m.config.ScreenH)
+			return m, m.t2048Mode.Init()
 		}
 
 		// For other games, start directly
@@ -486,6 +498,43 @@ func (m SessionModel) updateSnakeMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if selection.Level > 0 {
 			snake.SetStartLevel(selection.Level)
+		}
+		return m.startLocalGame(gameID, multiplayer.MatchModeSolo)
+	}
+
+	return m, cmd
+}
+
+// updateT2048Mode handles 2048 mode selection.
+func (m SessionModel) updateT2048Mode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	newModel, cmd := m.t2048Mode.Update(msg)
+	if t2048Model, ok := newModel.(T2048ModeModel); ok {
+		m.t2048Mode = t2048Model
+	}
+
+	// Check if user quit
+	if m.t2048Mode.IsQuitting() {
+		m.quitting = true
+		m.notifyDisconnect()
+		return m, tea.Quit
+	}
+
+	// Check for back
+	if m.t2048Mode.WantsBack() {
+		m.state = SessionStateMenu
+		m.menu = NewMenuModel(m.store, m.config)
+		return m, m.menu.Init()
+	}
+
+	// Check if mode was selected
+	if selection := m.t2048Mode.Selected(); selection != nil {
+		gameID := "2048"
+		if selection.Mode == T2048ModeEndless {
+			gameID = "2048_endless"
+		}
+		if selection.Level > 0 {
+			t2048.SetStartLevel(selection.Level)
 		}
 		return m.startLocalGame(gameID, multiplayer.MatchModeSolo)
 	}
@@ -697,6 +746,8 @@ func (m SessionModel) View() string {
 		return m.breakoutMode.View()
 	case SessionStateSnakeMode:
 		return m.snakeMode.View()
+	case SessionStateT2048Mode:
+		return m.t2048Mode.View()
 	case SessionStateOnlineLobby:
 		return m.lobby.View()
 	case SessionStateInGame:

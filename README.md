@@ -4,7 +4,7 @@ A terminal-based arcade gaming platform built with Go and Bubble Tea. Play class
 
 ## Features
 
-- **Classic Games**: Flappy Bird, Dino Runner, Breakout, Snake, and Pong
+- **Classic Games**: Flappy Bird, Dino Runner, Breakout, Snake, Pong, and 2048
 - **SSH Server**: Host an arcade server for remote players
 - **Online Multiplayer**: Play Pong against other players over SSH
 - **Fixed FPS Simulation**: Deterministic game logic at configurable tick rates
@@ -120,6 +120,14 @@ When connected to the SSH server:
 | P | Pause |
 | R | Restart (after game over) |
 
+### 2048
+
+| Key | Action |
+|-----|--------|
+| Arrow Keys / WASD | Slide tiles |
+| P | Pause |
+| R | Restart (after game over) |
+
 ## Available Games
 
 ### Flappy Bird
@@ -202,6 +210,38 @@ Classic snake game - collect food to grow, avoid walls and yourself!
 9. Spiral - Spiral pattern walls
 10. Final Maze - Complex maze layout
 
+### 2048
+Classic number puzzle game - slide tiles to combine them and reach the target!
+
+**Game Modes:**
+- **Campaign**: Progress through 10 levels with increasing targets (128 → 8192)
+- **Endless**: Play forever, no target - game ends only when no moves remain
+- **Level Select**: Start from any level in campaign mode
+
+**How to Play:**
+- Use arrow keys or WASD to slide all tiles in a direction
+- Tiles with the same value merge into one when they collide
+- Each merge doubles the tile value and adds to your score
+- A new tile (2 or 4) spawns after each valid move
+- Game over when no moves are possible
+
+**Scoring:**
+- Score increases by the merged tile value (e.g., two 4s merge into 8, +8 points)
+
+**Campaign Levels:**
+| Level | Name | Target | 4-spawn % |
+|-------|------|--------|-----------|
+| 1 | Warm-up | 128 | 10% |
+| 2 | Getting Started | 256 | 10% |
+| 3 | Building Momentum | 512 | 10% |
+| 4 | The Climb | 1024 | 10% |
+| 5 | Classic 2048 | 2048 | 10% |
+| 6 | Beyond Limits | 4096 | 12% |
+| 7 | Master Class | 8192 | 15% |
+| 8 | Expert Challenge | 8192 | 18% |
+| 9 | Grandmaster | 8192 | 20% |
+| 10 | Ultimate Champion | 8192 | 25% |
+
 ## Architecture
 
 The platform follows a clean SDK architecture:
@@ -223,6 +263,7 @@ internal/
     breakout/     # Breakout implementation (10 levels, power-ups)
     snake/        # Snake implementation (10 levels, campaign & endless)
     pong/         # Pong implementation (CPU & Online modes)
+    t2048/        # 2048 implementation (10 levels, campaign & endless)
 ```
 
 ### Multiplayer Architecture
@@ -480,6 +521,23 @@ Configuration files can be placed in `~/.arcade/` or `./configs/`:
 #                                                                                    #
 #                                                                                    #
 ######################################################################################
+```
+
+### 2048
+
+```bash
+                                    2048
+Score: 1624                             Level 5/10  Target: 2048
+                                   Campaign
+                    ┌────┬────┬────┬────┐
+                    │    │  2 │  4 │  2 │
+                    ├────┼────┼────┼────┤
+                    │  8 │ 16 │ 64 │  4 │
+                    ├────┼────┼────┼────┤
+                    │  4 │ 32 │128 │ 16 │
+                    ├────┼────┼────┼────┤
+                    │  2 │  8 │256 │512 │
+                    └────┴────┴────┴────┘
 ```
 
 ## License

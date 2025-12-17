@@ -185,8 +185,10 @@ func (g *Game) playerRect() core.Rect {
 func (g *Game) Render(dst *core.Screen) {
 	dst.Clear()
 
-	// Draw ground
-	dst.DrawHLine(0, g.groundY, dst.Width(), GroundChar)
+	// Draw ground with gray
+	for x := range dst.Width() {
+		dst.SetWithColor(x, g.groundY, GroundChar, core.ColorGray)
+	}
 
 	// Draw obstacles
 	for _, c := range g.obstacles.Cacti() {
@@ -196,15 +198,15 @@ func (g *Game) Render(dst *core.Screen) {
 	// Draw player (dino)
 	g.drawDino(dst)
 
-	// Draw HUD
+	// Draw HUD with cyan
 	scoreText := fmt.Sprintf(" Score: %d ", g.score)
-	dst.DrawText(2, 0, scoreText)
+	dst.DrawTextWithColor(2, 0, scoreText, core.ColorCyan)
 
 	// Show difficulty level if progression is enabled
 	if g.difficulty.IsEnabled() {
 		speed := g.difficulty.Speed(g.cfg.Physics.BaseSpeed, g.score, g.tickCount)
 		levelText := fmt.Sprintf(" Spd: %.1f ", speed)
-		dst.DrawText(dst.Width()-len(levelText)-2, 0, levelText)
+		dst.DrawTextWithColor(dst.Width()-len(levelText)-2, 0, levelText, core.ColorCyan)
 	}
 
 	if g.paused {
@@ -216,7 +218,7 @@ func (g *Game) Render(dst *core.Screen) {
 	}
 }
 
-// drawDino renders the player character.
+// drawDino renders the player character with green color.
 func (g *Game) drawDino(dst *core.Screen) {
 	// Player Y is relative to ground (negative = above ground)
 	baseY := g.groundY - g.cfg.Player.Height - int(-g.playerY)
@@ -228,39 +230,39 @@ func (g *Game) drawDino(dst *core.Screen) {
 	// ╱╲
 
 	// Head and body
-	dst.Set(playerX+1, baseY, DinoHead)
-	dst.Set(playerX+2, baseY, DinoBody)
+	dst.SetWithColor(playerX+1, baseY, DinoHead, core.ColorGreen)
+	dst.SetWithColor(playerX+2, baseY, DinoBody, core.ColorGreen)
 
 	// Body
-	dst.Set(playerX, baseY+1, DinoBody)
-	dst.Set(playerX+1, baseY+1, DinoBody)
-	dst.Set(playerX+2, baseY+1, DinoBody)
+	dst.SetWithColor(playerX, baseY+1, DinoBody, core.ColorGreen)
+	dst.SetWithColor(playerX+1, baseY+1, DinoBody, core.ColorGreen)
+	dst.SetWithColor(playerX+2, baseY+1, DinoBody, core.ColorGreen)
 
 	// Legs (animated when grounded)
 	if g.isGrounded {
 		if g.legFrame < 5 {
-			dst.Set(playerX, baseY+2, DinoLeg1)
+			dst.SetWithColor(playerX, baseY+2, DinoLeg1, core.ColorGreen)
 			dst.Set(playerX+1, baseY+2, ' ')
-			dst.Set(playerX+2, baseY+2, DinoLeg2)
+			dst.SetWithColor(playerX+2, baseY+2, DinoLeg2, core.ColorGreen)
 		} else {
 			dst.Set(playerX, baseY+2, ' ')
-			dst.Set(playerX+1, baseY+2, DinoLeg1)
-			dst.Set(playerX+2, baseY+2, DinoLeg2)
+			dst.SetWithColor(playerX+1, baseY+2, DinoLeg1, core.ColorGreen)
+			dst.SetWithColor(playerX+2, baseY+2, DinoLeg2, core.ColorGreen)
 		}
 	} else {
 		// In air - legs tucked
-		dst.Set(playerX, baseY+2, DinoLeg1)
-		dst.Set(playerX+1, baseY+2, DinoLeg2)
+		dst.SetWithColor(playerX, baseY+2, DinoLeg1, core.ColorGreen)
+		dst.SetWithColor(playerX+1, baseY+2, DinoLeg2, core.ColorGreen)
 		dst.Set(playerX+2, baseY+2, ' ')
 	}
 }
 
-// drawCactus renders a single cactus obstacle.
+// drawCactus renders a single cactus obstacle with bright green color.
 func (g *Game) drawCactus(dst *core.Screen, c Cactus) {
 	for dy := range c.Height {
 		for dx := range c.Width {
 			y := g.groundY - c.Height + dy
-			dst.Set(c.X+dx, y, CactusChar)
+			dst.SetWithColor(c.X+dx, y, CactusChar, core.ColorBrightGreen)
 		}
 	}
 }

@@ -671,7 +671,7 @@ func (g *Game) Render(dst *core.Screen) {
 		fx := g.mapOffsetX + g.food.X
 		fy := g.mapOffsetY + g.food.Y
 		if fx >= 0 && fx < dst.Width() && fy >= 0 && fy < dst.Height() {
-			dst.Set(fx, fy, '*')
+			dst.SetWithColor(fx, fy, '*', core.ColorRed)
 		}
 	}
 
@@ -703,14 +703,12 @@ func (g *Game) renderHUD(dst *core.Screen) {
 			g.score, g.levelIndex+1, LevelCount(), g.foodEaten, g.cfg.Gameplay.FoodPerLevel, speed)
 	}
 
-	// Draw HUD line
-	for x := 0; x < dst.Width() && x < len(hud); x++ {
-		dst.Set(x, 0, rune(hud[x]))
-	}
+	// Draw HUD line with cyan color
+	dst.DrawTextWithColor(0, 0, hud, core.ColorCyan)
 
-	// Draw separator
+	// Draw separator with gray color
 	for x := range dst.Width() {
-		dst.Set(x, 1, '─')
+		dst.SetWithColor(x, 1, '─', core.ColorGray)
 	}
 }
 
@@ -720,7 +718,7 @@ func (g *Game) renderMap(dst *core.Screen) {
 		wx := g.mapOffsetX + wall.X
 		wy := g.mapOffsetY + wall.Y
 		if wx >= 0 && wx < dst.Width() && wy >= 0 && wy < dst.Height() {
-			dst.Set(wx, wy, '#')
+			dst.SetWithColor(wx, wy, '#', core.ColorGray)
 		}
 	}
 }
@@ -732,9 +730,9 @@ func (g *Game) renderSnake(dst *core.Screen) {
 		sy := g.mapOffsetY + seg.Y
 		if sx >= 0 && sx < dst.Width() && sy >= 0 && sy < dst.Height() {
 			if i == 0 {
-				dst.Set(sx, sy, 'O') // Head
+				dst.SetWithColor(sx, sy, 'O', core.ColorBrightGreen) // Head
 			} else {
-				dst.Set(sx, sy, 'o') // Body
+				dst.SetWithColor(sx, sy, 'o', core.ColorGreen) // Body
 			}
 		}
 	}

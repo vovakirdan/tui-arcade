@@ -701,15 +701,16 @@ func (g *Game) Render(dst *core.Screen) {
 
 // renderHUD draws the score, lives, and level indicator.
 func (g *Game) renderHUD(dst *core.Screen) {
-	// Score on left
+	// Score on left with cyan
 	scoreText := fmt.Sprintf("Score: %d", g.score)
-	dst.DrawText(1, 0, scoreText)
+	dst.DrawTextWithColor(1, 0, scoreText, core.ColorCyan)
 
-	// Lives in center
+	// Lives in center with red for emphasis
 	livesText := fmt.Sprintf("Lives: %d", g.lives)
-	dst.DrawTextCentered(0, livesText)
+	x := (dst.Width() - len(livesText)) / 2
+	dst.DrawTextWithColor(x, 0, livesText, core.ColorRed)
 
-	// Level on right
+	// Level on right with cyan
 	var levelText string
 	if g.mode == ModeEndless {
 		totalLevel := g.endlessCycle*LevelCount() + g.levelIndex + 1
@@ -717,16 +718,16 @@ func (g *Game) renderHUD(dst *core.Screen) {
 	} else {
 		levelText = fmt.Sprintf("Level: %d/%d", g.levelIndex+1, LevelCount())
 	}
-	dst.DrawText(dst.Width()-len(levelText)-1, 0, levelText)
+	dst.DrawTextWithColor(dst.Width()-len(levelText)-1, 0, levelText, core.ColorCyan)
 
 	// Effects display (compact) on row 1
 	effectsStr := g.buildEffectsString()
 	if effectsStr != "" {
-		dst.DrawText(1, 1, effectsStr)
+		dst.DrawTextWithColor(1, 1, effectsStr, core.ColorYellow)
 	} else {
 		// Separator line if no effects
 		for x := range dst.Width() {
-			dst.Set(x, 1, BorderHoriz)
+			dst.SetWithColor(x, 1, BorderHoriz, core.ColorGray)
 		}
 	}
 }
@@ -749,6 +750,18 @@ func (g *Game) buildEffectsString() string {
 	return result
 }
 
+// brickRowColors defines colors for brick rows.
+var brickRowColors = []core.Color{
+	core.ColorRed,
+	core.ColorOrange,
+	core.ColorYellow,
+	core.ColorGreen,
+	core.ColorCyan,
+	core.ColorBlue,
+	core.ColorMagenta,
+	core.ColorBrightRed,
+}
+
 // renderBricks draws all alive bricks.
 func (g *Game) renderBricks(dst *core.Screen) {
 	for row := range g.level.Height {
@@ -764,26 +777,53 @@ func (g *Game) renderBricks(dst *core.Screen) {
 
 			// Get glyph based on brick type
 			var glyph rune
+			var color core.Color
 			switch brick.Type {
 			case BrickHard:
 				if brick.HP > 1 {
 					glyph = HardBrickGlyph
+					color = core.ColorBrightWhite
 				} else {
 					glyph = BrickGlyphs[row%len(BrickGlyphs)]
+					color = brickRowColors[row%len(brickRowColors)]
 				}
 			case BrickSolid:
 				glyph = SolidBrickGlyph
+				color = core.ColorGray
 			default:
 				glyph = BrickGlyphs[row%len(BrickGlyphs)]
+				color = brickRowColors[row%len(brickRowColors)]
 			}
 
-			// Draw brick
+			// Draw brick with color
 			for dx := range g.brickWidth {
 				if screenX+dx < dst.Width() && screenY < dst.Height() {
-					dst.Set(screenX+dx, screenY, glyph)
+					dst.SetWithColor(screenX+dx, screenY, glyph, color)
 				}
 			}
 		}
+	}
+}
+
+// pickupColor returns the color for a power-up type.
+func pickupColor(t PickupType) core.Color {
+	switch t {
+	case PickupWiden:
+		return core.ColorGreen
+	case PickupShrink:
+		return core.ColorRed
+	case PickupMultiball:
+		return core.ColorMagenta
+	case PickupSticky:
+		return core.ColorYellow
+	case PickupSpeedUp:
+		return core.ColorOrange
+	case PickupSlowDown:
+		return core.ColorCyan
+	case PickupExtraLife:
+		return core.ColorBrightRed
+	default:
+		return core.ColorWhite
 	}
 }
 
@@ -798,7 +838,7 @@ func (g *Game) renderPickups(dst *core.Screen) {
 		y := pickup.CellY()
 
 		if x >= 0 && x < dst.Width() && y >= 0 && y < dst.Height() {
-			dst.Set(x, y, pickup.Type.Glyph())
+			dst.SetWithColor(x, y, pickup.Type.Glyph(), pickupColor(pickup.Type))
 		}
 	}
 }
@@ -808,7 +848,7 @@ func (g *Game) renderPaddle(dst *core.Screen) {
 	paddleX := g.paddle.CellX()
 	for i := range g.paddle.Width {
 		if paddleX+i < dst.Width() {
-			dst.Set(paddleX+i, g.paddle.Y, PaddleChar)
+			dst.SetWithColor(paddleX+i, g.paddle.Y, PaddleChar, core.ColorCyan)
 		}
 	}
 }
@@ -824,7 +864,7 @@ func (g *Game) renderBalls(dst *core.Screen) {
 		ballY := ball.CellY()
 
 		if ballX >= 0 && ballX < dst.Width() && ballY >= 0 && ballY < dst.Height() {
-			dst.Set(ballX, ballY, BallChar)
+			dst.SetWithColor(ballX, ballY, BallChar, core.ColorBrightWhite)
 		}
 	}
 }

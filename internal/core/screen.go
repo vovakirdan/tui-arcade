@@ -4,13 +4,19 @@ import (
 	"strings"
 )
 
+// Cell represents a single screen cell with character and color.
+type Cell struct {
+	Rune  rune
+	Color Color
+}
+
 // Screen is a 2D character buffer for rendering game graphics.
 // It decouples game rendering from the terminal, allowing games to draw
 // using simple rune operations while the platform handles actual display.
 type Screen struct {
 	width  int
 	height int
-	cells  [][]rune
+	cells  [][]Cell
 }
 
 // NewScreen creates a new screen buffer with the given dimensions.
@@ -26,9 +32,9 @@ func NewScreen(width, height int) *Screen {
 
 // allocate creates the underlying cell storage.
 func (s *Screen) allocate() {
-	s.cells = make([][]rune, s.height)
+	s.cells = make([][]Cell, s.height)
 	for y := range s.cells {
-		s.cells[y] = make([]rune, s.width)
+		s.cells[y] = make([]Cell, s.width)
 	}
 }
 
@@ -56,7 +62,7 @@ func (s *Screen) Resize(width, height int) {
 	s.allocate()
 	s.Clear()
 
-	// Copy old content
+	// Copy old content (both rune and color)
 	copyW := Min(oldW, width)
 	copyH := Min(oldH, height)
 	for y := range copyH {
@@ -66,31 +72,49 @@ func (s *Screen) Resize(width, height int) {
 	}
 }
 
-// Clear fills the entire screen with spaces.
+// Clear fills the entire screen with spaces and resets colors.
 func (s *Screen) Clear() {
 	for y := range s.cells {
 		for x := range s.cells[y] {
-			s.cells[y][x] = ' '
+			s.cells[y][x] = Cell{Rune: ' ', Color: ColorDefault}
 		}
 	}
 }
 
-// Fill fills the entire screen with the given rune.
+// Fill fills the entire screen with the given rune (default color).
 func (s *Screen) Fill(r rune) {
 	for y := range s.cells {
 		for x := range s.cells[y] {
-			s.cells[y][x] = r
+			s.cells[y][x] = Cell{Rune: r, Color: ColorDefault}
 		}
 	}
 }
 
-// Set places a rune at the given position.
+// Set places a rune at the given position (preserves existing color).
 // Out-of-bounds coordinates are silently ignored.
 func (s *Screen) Set(x, y int, r rune) {
 	if x < 0 || x >= s.width || y < 0 || y >= s.height {
 		return
 	}
-	s.cells[y][x] = r
+	s.cells[y][x].Rune = r
+}
+
+// SetWithColor places a rune with a specific color at the given position.
+// Out-of-bounds coordinates are silently ignored.
+func (s *Screen) SetWithColor(x, y int, r rune, c Color) {
+	if x < 0 || x >= s.width || y < 0 || y >= s.height {
+		return
+	}
+	s.cells[y][x] = Cell{Rune: r, Color: c}
+}
+
+// SetColor sets the color at the given position without changing the rune.
+// Out-of-bounds coordinates are silently ignored.
+func (s *Screen) SetColor(x, y int, c Color) {
+	if x < 0 || x >= s.width || y < 0 || y >= s.height {
+		return
+	}
+	s.cells[y][x].Color = c
 }
 
 // Get returns the rune at the given position.
@@ -98,6 +122,15 @@ func (s *Screen) Set(x, y int, r rune) {
 func (s *Screen) Get(x, y int) rune {
 	if x < 0 || x >= s.width || y < 0 || y >= s.height {
 		return ' '
+	}
+	return s.cells[y][x].Rune
+}
+
+// GetCell returns the full cell (rune + color) at the given position.
+// Returns empty cell for out-of-bounds coordinates.
+func (s *Screen) GetCell(x, y int) Cell {
+	if x < 0 || x >= s.width || y < 0 || y >= s.height {
+		return Cell{Rune: ' ', Color: ColorDefault}
 	}
 	return s.cells[y][x]
 }
@@ -110,10 +143,24 @@ func (s *Screen) DrawText(x, y int, text string) {
 	}
 }
 
+// DrawTextWithColor writes a colored string horizontally starting at (x, y).
+// Characters that extend beyond screen bounds are clipped.
+func (s *Screen) DrawTextWithColor(x, y int, text string, c Color) {
+	for i, r := range text {
+		s.SetWithColor(x+i, y, r, c)
+	}
+}
+
 // DrawTextCentered draws text centered horizontally at the given y position.
 func (s *Screen) DrawTextCentered(y int, text string) {
 	x := (s.width - len(text)) / 2
 	s.DrawText(x, y, text)
+}
+
+// DrawTextCenteredWithColor draws colored text centered horizontally.
+func (s *Screen) DrawTextCenteredWithColor(y int, text string, c Color) {
+	x := (s.width - len(text)) / 2
+	s.DrawTextWithColor(x, y, text, c)
 }
 
 // DrawRect fills a rectangular area with the given rune.
@@ -160,7 +207,7 @@ func (s *Screen) DrawVLine(x, y, length int, r rune) {
 	}
 }
 
-// String converts the screen buffer to a renderable string.
+// String converts the screen buffer to a plain text string (no colors).
 // Each row is joined with newlines.
 func (s *Screen) String() string {
 	var sb strings.Builder
@@ -171,16 +218,20 @@ func (s *Screen) String() string {
 			sb.WriteRune('\n')
 		}
 		for x := range s.width {
-			sb.WriteRune(s.cells[y][x])
+			sb.WriteRune(s.cells[y][x].Rune)
 		}
 	}
 	return sb.String()
 }
 
-// Row returns a copy of the specified row as a string.
+// Row returns a copy of the specified row as a plain text string.
 func (s *Screen) Row(y int) string {
 	if y < 0 || y >= s.height {
 		return strings.Repeat(" ", s.width)
 	}
-	return string(s.cells[y])
+	runes := make([]rune, s.width)
+	for x := range s.width {
+		runes[x] = s.cells[y][x].Rune
+	}
+	return string(runes)
 }

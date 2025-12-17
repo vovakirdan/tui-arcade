@@ -389,38 +389,38 @@ func (g *Game) Render(dst *core.Screen) {
 	paddleWidth := g.cfg.Paddles.Width
 	paddleOffset := g.cfg.Paddles.Offset
 
-	// Draw center line (net)
+	// Draw center line (net) with gray
 	centerX := dst.Width() / 2
 	for y := 1; y < dst.Height()-1; y += 2 {
-		dst.Set(centerX, y, NetChar)
+		dst.SetWithColor(centerX, y, NetChar, core.ColorGray)
 	}
 
-	// Draw paddles
+	// Draw paddles (P1 cyan, P2/CPU magenta)
 	paddle1X := paddleOffset
 	paddle2X := dst.Width() - paddleOffset - paddleWidth
 
 	for i := range paddleHeight {
-		dst.Set(paddle1X, int(g.paddle1Y)+i, PaddleChar)
-		dst.Set(paddle2X, int(g.paddle2Y)+i, PaddleChar)
+		dst.SetWithColor(paddle1X, int(g.paddle1Y)+i, PaddleChar, core.ColorCyan)
+		dst.SetWithColor(paddle2X, int(g.paddle2Y)+i, PaddleChar, core.ColorMagenta)
 	}
 
-	// Draw ball
+	// Draw ball with bright white
 	if !g.serving || (g.serveDelay/10)%2 == 0 { // Blink during serve
-		dst.Set(int(g.ballX), int(g.ballY), BallChar)
+		dst.SetWithColor(int(g.ballX), int(g.ballY), BallChar, core.ColorBrightWhite)
 	}
 
-	// Draw scores
+	// Draw scores with cyan
 	score1Text := fmt.Sprintf("%d", g.score1)
 	score2Text := fmt.Sprintf("%d", g.score2)
-	dst.DrawText(centerX-5, 0, score1Text)
-	dst.DrawText(centerX+4, 0, score2Text)
+	dst.DrawTextWithColor(centerX-5, 0, score1Text, core.ColorCyan)
+	dst.DrawTextWithColor(centerX+4, 0, score2Text, core.ColorMagenta)
 
-	// Draw labels based on mode
-	dst.DrawText(1, 0, "P1")
+	// Draw labels based on mode with matching colors
+	dst.DrawTextWithColor(1, 0, "P1", core.ColorCyan)
 	if g.mode == ModeOnline {
-		dst.DrawText(dst.Width()-3, 0, "P2")
+		dst.DrawTextWithColor(dst.Width()-3, 0, "P2", core.ColorMagenta)
 	} else {
-		dst.DrawText(dst.Width()-4, 0, "CPU")
+		dst.DrawTextWithColor(dst.Width()-4, 0, "CPU", core.ColorMagenta)
 	}
 
 	if g.paused {

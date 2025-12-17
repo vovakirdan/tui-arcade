@@ -189,36 +189,38 @@ func (g *Game) playerRect() core.Rect {
 func (g *Game) Render(dst *core.Screen) {
 	dst.Clear()
 
-	// Draw ground
+	// Draw ground with bright yellow
 	groundY := dst.Height() - 1
-	dst.DrawHLine(0, groundY, dst.Width(), GroundChar)
+	for x := range dst.Width() {
+		dst.SetWithColor(x, groundY, GroundChar, core.ColorBrightYellow)
+	}
 
 	// Draw pipes
 	for _, p := range g.pipes.Pipes() {
 		g.drawPipe(dst, p)
 	}
 
-	// Draw player
+	// Draw player (bird) with yellow
 	playerY := int(g.playerY)
 	for dy := range g.cfg.Player.Height {
 		for dx := range g.cfg.Player.Width {
 			if dx == g.cfg.Player.Width-1 && dy == 0 {
-				dst.Set(g.cfg.Player.X+dx, playerY+dy, PlayerChar)
+				dst.SetWithColor(g.cfg.Player.X+dx, playerY+dy, PlayerChar, core.ColorYellow)
 			} else {
-				dst.Set(g.cfg.Player.X+dx, playerY+dy, '●')
+				dst.SetWithColor(g.cfg.Player.X+dx, playerY+dy, '●', core.ColorYellow)
 			}
 		}
 	}
 
-	// Draw HUD
+	// Draw HUD with cyan
 	scoreText := fmt.Sprintf(" Score: %d ", g.score)
-	dst.DrawText(2, 0, scoreText)
+	dst.DrawTextWithColor(2, 0, scoreText, core.ColorCyan)
 
 	// Show difficulty level if progression is enabled
 	if g.difficulty.IsEnabled() {
 		level := g.difficulty.Level(g.score, g.tickCount)
 		levelText := fmt.Sprintf(" Lvl: %.0f%% ", level*100)
-		dst.DrawText(dst.Width()-len(levelText)-2, 0, levelText)
+		dst.DrawTextWithColor(dst.Width()-len(levelText)-2, 0, levelText, core.ColorCyan)
 	}
 
 	if g.waiting {
@@ -234,7 +236,7 @@ func (g *Game) Render(dst *core.Screen) {
 	}
 }
 
-// drawPipe renders a single pipe to the screen.
+// drawPipe renders a single pipe to the screen with green color.
 func (g *Game) drawPipe(dst *core.Screen, p Pipe) {
 	screenH := dst.Height() - 1 // Account for ground
 	pipeWidth := g.cfg.Obstacles.PipeWidth
@@ -242,13 +244,13 @@ func (g *Game) drawPipe(dst *core.Screen, p Pipe) {
 	// Draw top section (from top of screen to gap)
 	for y := range p.GapY {
 		for x := range pipeWidth {
-			dst.Set(p.X+x, y, PipeChar)
+			dst.SetWithColor(p.X+x, y, PipeChar, core.ColorGreen)
 		}
 	}
 	// Cap on top section (at bottom of top section)
 	if p.GapY > 0 {
 		for x := range pipeWidth {
-			dst.Set(p.X+x, p.GapY-1, PipeCapTop)
+			dst.SetWithColor(p.X+x, p.GapY-1, PipeCapTop, core.ColorBrightGreen)
 		}
 	}
 
@@ -256,13 +258,13 @@ func (g *Game) drawPipe(dst *core.Screen, p Pipe) {
 	bottomY := p.GapY + p.GapHeight
 	for y := bottomY; y < screenH; y++ {
 		for x := range pipeWidth {
-			dst.Set(p.X+x, y, PipeChar)
+			dst.SetWithColor(p.X+x, y, PipeChar, core.ColorGreen)
 		}
 	}
 	// Cap on bottom section (at top of bottom section)
 	if bottomY < screenH {
 		for x := range pipeWidth {
-			dst.Set(p.X+x, bottomY, PipeCapBottom)
+			dst.SetWithColor(p.X+x, bottomY, PipeCapBottom, core.ColorBrightGreen)
 		}
 	}
 }

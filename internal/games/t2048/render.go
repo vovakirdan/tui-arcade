@@ -55,14 +55,14 @@ func (g *Game) renderTooSmall(dst *core.Screen) {
 
 // renderHUD draws the score and level info.
 func (g *Game) renderHUD(dst *core.Screen, boardX, boardW int) {
-	// Title
+	// Title with bright yellow
 	title := "2048"
 	titleX := boardX + (boardW-len(title))/2
-	dst.DrawText(titleX, 0, title)
+	dst.DrawTextWithColor(titleX, 0, title, core.ColorBrightYellow)
 
-	// Score
+	// Score with cyan
 	scoreStr := fmt.Sprintf("Score: %d", g.score)
-	dst.DrawText(boardX, 1, scoreStr)
+	dst.DrawTextWithColor(boardX, 1, scoreStr, core.ColorCyan)
 
 	// Level/Target info (campaign) or Max tile (endless)
 	var infoStr string
@@ -76,20 +76,20 @@ func (g *Game) renderHUD(dst *core.Screen, boardX, boardW int) {
 	if infoX < boardX {
 		infoX = boardX
 	}
-	dst.DrawText(infoX, 1, infoStr)
+	dst.DrawTextWithColor(infoX, 1, infoStr, core.ColorCyan)
 
-	// Mode indicator
+	// Mode indicator with gray
 	modeStr := "Campaign"
 	if g.mode == ModeEndless {
 		modeStr = "Endless"
 	}
 	modeX := boardX + (boardW-len(modeStr))/2
-	dst.DrawText(modeX, 2, modeStr)
+	dst.DrawTextWithColor(modeX, 2, modeStr, core.ColorGray)
 }
 
 // renderBoardGrid draws the 4x4 grid borders (without tiles).
 func (g *Game) renderBoardGrid(dst *core.Screen, boardX, boardY int) {
-	// Draw grid borders
+	// Draw grid borders with gray color
 	for y := range BoardSize + 1 {
 		for x := range BoardSize + 1 {
 			px := boardX + x*g.cellWidth
@@ -117,19 +117,19 @@ func (g *Game) renderBoardGrid(dst *core.Screen, boardX, boardY int) {
 			default:
 				corner = '┼'
 			}
-			dst.Set(px, py, corner)
+			dst.SetWithColor(px, py, corner, core.ColorGray)
 
 			// Draw horizontal line to the right
 			if x < BoardSize {
 				for i := 1; i < g.cellWidth; i++ {
-					dst.Set(px+i, py, '─')
+					dst.SetWithColor(px+i, py, '─', core.ColorGray)
 				}
 			}
 
 			// Draw vertical line down
 			if y < BoardSize {
 				for i := 1; i < g.cellHeight; i++ {
-					dst.Set(px, py+i, '│')
+					dst.SetWithColor(px, py+i, '│', core.ColorGray)
 				}
 			}
 		}
@@ -204,7 +204,7 @@ func (g *Game) renderTileAt(dst *core.Screen, boardX, boardY, cellX, cellY, val 
 		padLeft = 0
 	}
 
-	dst.DrawText(px+padLeft, py, valStr)
+	dst.DrawTextWithColor(px+padLeft, py, valStr, tileColor(val))
 }
 
 // renderTileAtFloat draws a tile value at interpolated float position.
@@ -220,7 +220,7 @@ func (g *Game) renderTileAtFloat(dst *core.Screen, boardX, boardY int, cellX, ce
 		padLeft = 0
 	}
 
-	dst.DrawText(px+padLeft, py, valStr)
+	dst.DrawTextWithColor(px+padLeft, py, valStr, tileColor(val))
 }
 
 // renderOverlays draws game state overlays.
@@ -292,4 +292,22 @@ func (g *Game) drawOverlay(dst *core.Screen, centerX, centerY int, lines ...stri
 // Controls returns the control hints for the game.
 func (g *Game) Controls() string {
 	return "Arrow keys/WASD: Move | P: Pause | R: Restart | Q: Quit"
+}
+
+// tileColor returns the color for a tile based on its value.
+func tileColor(val int) core.Color {
+	switch {
+	case val <= 4:
+		return core.ColorWhite
+	case val <= 16:
+		return core.ColorYellow
+	case val <= 64:
+		return core.ColorOrange
+	case val <= 256:
+		return core.ColorRed
+	case val <= 1024:
+		return core.ColorMagenta
+	default:
+		return core.ColorBrightMagenta
+	}
 }

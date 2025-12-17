@@ -27,6 +27,7 @@ type Game struct {
 	score      int                 // Current score
 	gameOver   bool                // Whether game has ended
 	paused     bool                // Whether game is paused
+	waiting    bool                // Waiting for first input to start
 	runtime    core.RuntimeConfig  // Runtime config (screen size, tick rate)
 	cfg        config.FlappyConfig // Game-specific config
 	difficulty *config.DifficultyManager
@@ -100,6 +101,7 @@ func (g *Game) Reset(runtime core.RuntimeConfig) {
 	g.score = 0
 	g.gameOver = false
 	g.paused = false
+	g.waiting = true
 	g.tickCount = 0
 
 	// Initialize pipe manager
@@ -115,6 +117,15 @@ func (g *Game) Reset(runtime core.RuntimeConfig) {
 // Step advances the game by one tick.
 func (g *Game) Step(in core.InputFrame) core.StepResult {
 	if g.gameOver {
+		return core.StepResult{State: g.State()}
+	}
+
+	// Wait for first input to start the game
+	if g.waiting {
+		if in.Has(core.ActionJump) {
+			g.waiting = false
+			g.playerVel = g.cfg.Physics.JumpImpulse // First jump
+		}
 		return core.StepResult{State: g.State()}
 	}
 
@@ -208,6 +219,10 @@ func (g *Game) Render(dst *core.Screen) {
 		level := g.difficulty.Level(g.score, g.tickCount)
 		levelText := fmt.Sprintf(" Lvl: %.0f%% ", level*100)
 		dst.DrawText(dst.Width()-len(levelText)-2, 0, levelText)
+	}
+
+	if g.waiting {
+		g.drawCenteredMessage(dst, "FLAPPY BIRD", "Press SPACE to start")
 	}
 
 	if g.paused {

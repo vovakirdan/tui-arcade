@@ -92,8 +92,62 @@ func TestGameReset(t *testing.T) {
 	if g.paused {
 		t.Error("Reset should clear paused flag")
 	}
+	if !g.waiting {
+		t.Error("Reset should set waiting flag")
+	}
 	if g.tickCount != 0 {
 		t.Errorf("Reset should clear tickCount, got %d", g.tickCount)
+	}
+}
+
+func TestGameWaitingState(t *testing.T) {
+	cfg := core.RuntimeConfig{
+		ScreenW:  80,
+		ScreenH:  24,
+		TickRate: 60,
+		Seed:     1,
+	}
+
+	g := New()
+	g.Reset(cfg)
+
+	// Game should start in waiting state
+	if !g.waiting {
+		t.Error("Game should start in waiting state")
+	}
+
+	initialY := g.playerY
+
+	// Step without jump - should not move
+	noInput := core.NewInputFrame()
+	g.Step(noInput)
+
+	if g.playerY != initialY {
+		t.Errorf("Player should not move while waiting, was %f, now %f", initialY, g.playerY)
+	}
+	if !g.waiting {
+		t.Error("Game should still be waiting")
+	}
+
+	// Jump should start the game
+	jumpInput := core.NewInputFrame()
+	jumpInput.Set(core.ActionJump)
+	g.Step(jumpInput)
+
+	if g.waiting {
+		t.Error("Game should no longer be waiting after jump")
+	}
+
+	// Velocity should be set to jump impulse (negative = upward)
+	if g.playerVel >= 0 {
+		t.Errorf("Player velocity should be negative after jump, got %f", g.playerVel)
+	}
+
+	// Step one more time to see movement
+	g.Step(noInput)
+
+	if g.playerY >= initialY {
+		t.Errorf("Player should move up after starting, was %f, now %f", initialY, g.playerY)
 	}
 }
 
@@ -107,6 +161,7 @@ func TestGameJumpPhysics(t *testing.T) {
 
 	g := New()
 	g.Reset(cfg)
+	g.waiting = false // Skip waiting state for test
 
 	initialY := g.playerY
 
@@ -136,6 +191,7 @@ func TestGameGravity(t *testing.T) {
 
 	g := New()
 	g.Reset(cfg)
+	g.waiting = false // Skip waiting state for test
 
 	// Position player in the middle, no velocity
 	g.playerY = 10
@@ -166,6 +222,7 @@ func TestGamePause(t *testing.T) {
 
 	g := New()
 	g.Reset(cfg)
+	g.waiting = false // Skip waiting state for test
 
 	// Pause the game
 	pauseInput := core.NewInputFrame()
@@ -206,6 +263,7 @@ func TestGameOver(t *testing.T) {
 
 	g := New()
 	g.Reset(cfg)
+	g.waiting = false // Skip waiting state for test
 
 	// Force player to hit the ground
 	g.playerY = float64(cfg.ScreenH - 1)
@@ -264,6 +322,7 @@ func TestPipeCollision(t *testing.T) {
 
 	g := New()
 	g.Reset(cfg)
+	g.waiting = false // Skip waiting state for test
 
 	// Manually create a pipe right at the player
 	g.pipes.pipes = append(g.pipes.pipes, Pipe{

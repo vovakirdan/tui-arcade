@@ -2,10 +2,10 @@
 # Edit these values to customize gameplay
 
 physics:
-  gravity: 0.25          # Downward acceleration per tick (lower = floatier)
-  jump_impulse: -1.8     # Upward velocity on jump (negative = up)
-  max_fall_speed: 3.0    # Terminal velocity
-  base_speed: 0.8        # Pipe movement speed at easy difficulty
+  gravity: 0.20          # Downward acceleration per tick (lower = floatier)
+  jump_impulse: -1.5     # Upward velocity on jump (negative = up)
+  max_fall_speed: 0.5    # Terminal velocity
+  base_speed: 0.5        # Pipe movement speed at easy difficulty
 
 obstacles:
   pipe_width: 5          # Width of pipes in characters

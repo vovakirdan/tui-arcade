@@ -90,6 +90,42 @@ type ScalingConfig struct {
 	SpacingReduction int     `yaml:"spacing_reduction"` // Spacing reduction at max difficulty
 }
 
+// PongConfig contains all configuration for the Pong game.
+type PongConfig struct {
+	Physics    PongPhysics      `yaml:"physics"`
+	Paddles    PongPaddles      `yaml:"paddles"`
+	Gameplay   PongGameplay     `yaml:"gameplay"`
+	CPU        PongCPU          `yaml:"cpu"`
+	Difficulty DifficultyConfig `yaml:"difficulty"`
+}
+
+// PongPhysics defines physics parameters for Pong.
+type PongPhysics struct {
+	BallSpeed    float64 `yaml:"ball_speed"`
+	PaddleSpeed  float64 `yaml:"paddle_speed"`
+	MaxBallSpeed float64 `yaml:"max_ball_speed"` // Max speed multiplier
+	SpinFactor   float64 `yaml:"spin_factor"`    // How much paddle hit affects angle
+}
+
+// PongPaddles defines paddle parameters for Pong.
+type PongPaddles struct {
+	Height int `yaml:"height"`
+	Width  int `yaml:"width"`
+	Offset int `yaml:"offset"` // Distance from screen edge
+}
+
+// PongGameplay defines gameplay parameters for Pong.
+type PongGameplay struct {
+	WinScore   int `yaml:"win_score"`
+	ServeDelay int `yaml:"serve_delay"` // Ticks before ball starts moving
+}
+
+// PongCPU defines CPU opponent parameters for Pong.
+type PongCPU struct {
+	MinSkill float64 `yaml:"min_skill"` // Starting CPU skill (0-1)
+	MaxSkill float64 `yaml:"max_skill"` // Maximum CPU skill (0-1)
+}
+
 // DifficultyPreset represents a named difficulty level.
 type DifficultyPreset string
 

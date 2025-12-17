@@ -10,6 +10,9 @@ var defaultFlappyYAML []byte
 //go:embed defaults/dino.yaml
 var defaultDinoYAML []byte
 
+//go:embed defaults/pong.yaml
+var defaultPongYAML []byte
+
 // DefaultFlappyConfig returns the default Flappy Bird configuration.
 func DefaultFlappyConfig() FlappyConfig {
 	return FlappyConfig{
@@ -87,6 +90,44 @@ func DefaultDinoConfig() DinoConfig {
 	}
 }
 
+// DefaultPongConfig returns the default Pong configuration.
+func DefaultPongConfig() PongConfig {
+	return PongConfig{
+		Physics: PongPhysics{
+			BallSpeed:    0.5,
+			PaddleSpeed:  1.0,
+			MaxBallSpeed: 3.0,
+			SpinFactor:   0.3,
+		},
+		Paddles: PongPaddles{
+			Height: 5,
+			Width:  1,
+			Offset: 2,
+		},
+		Gameplay: PongGameplay{
+			WinScore:   5,
+			ServeDelay: 60,
+		},
+		CPU: PongCPU{
+			MinSkill: 0.6,
+			MaxSkill: 0.85,
+		},
+		Difficulty: DifficultyConfig{
+			Enabled:      true,
+			InitialLevel: 0.0,
+			Progression: ProgressionConfig{
+				Type:  "time",
+				MaxAt: 36000, // 10 minutes at 60fps
+			},
+			Scaling: ScalingConfig{
+				SpeedMultiplier:  0.5,
+				GapReduction:     0,
+				SpacingReduction: 0,
+			},
+		},
+	}
+}
+
 // GetDefaultYAML returns the embedded default YAML for a game.
 func GetDefaultYAML(gameID string) []byte {
 	switch gameID {
@@ -94,6 +135,8 @@ func GetDefaultYAML(gameID string) []byte {
 		return defaultFlappyYAML
 	case "dino":
 		return defaultDinoYAML
+	case "pong":
+		return defaultPongYAML
 	default:
 		return nil
 	}

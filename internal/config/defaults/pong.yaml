@@ -1,0 +1,32 @@
+# Pong Configuration
+# Edit these values to customize gameplay
+
+physics:
+  ball_speed: 0.5        # Initial ball velocity
+  paddle_speed: 1.0      # How fast paddles move
+  max_ball_speed: 3.0    # Maximum ball speed multiplier
+  spin_factor: 0.3       # How much paddle hit position affects angle
+
+paddles:
+  height: 5              # Paddle height in characters
+  width: 1               # Paddle width in characters
+  offset: 2              # Distance from screen edge
+
+gameplay:
+  win_score: 5           # Points needed to win
+  serve_delay: 60        # Ticks before ball starts (60 = 1 sec at 60fps)
+
+cpu:
+  min_skill: 0.6         # Starting CPU skill (0.0 = easy, 1.0 = perfect)
+  max_skill: 0.85        # Maximum CPU skill after progression
+
+difficulty:
+  enabled: true          # Enable progressive difficulty (false = fixed CPU skill)
+  initial_level: 0.0     # Starting difficulty (0.0=easy, 0.5=medium, 1.0=hard)
+  progression:
+    type: "time"         # "score", "time", or "none"
+    max_at: 36000        # Ticks at which max difficulty is reached (10 min)
+  scaling:
+    speed_multiplier: 0.5  # Ball speed increase at max (+50%)
+    gap_reduction: 0       # Not used for Pong
+    spacing_reduction: 0   # Not used for Pong

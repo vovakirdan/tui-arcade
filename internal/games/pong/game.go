@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 
+	"github.com/vovakirdan/tui-arcade/internal/config"
 	"github.com/vovakirdan/tui-arcade/internal/core"
 	"github.com/vovakirdan/tui-arcade/internal/multiplayer"
 	"github.com/vovakirdan/tui-arcade/internal/registry"
@@ -19,17 +20,32 @@ const (
 	NetChar    = '│'
 )
 
-// Default game settings
-const (
-	DefaultPaddleHeight   = 5
-	DefaultPaddleWidth    = 1
-	DefaultPaddleOffset   = 2 // Distance from edge
-	DefaultBallSpeed      = 0.5
-	DefaultPaddleSpeed    = 1.0
-	DefaultWinScore       = 5
-	DefaultCPUReactionMin = 0.6  // CPU reaction time (0-1, 1 = perfect)
-	DefaultCPUReactionMax = 0.85 // Max CPU skill
-)
+// configPath stores the custom config path set via CLI
+var configPath string
+
+// difficultyPreset stores the difficulty preset set via CLI
+var difficultyPreset config.DifficultyPreset
+
+// SetConfigPath sets the custom config path for loading.
+func SetConfigPath(path string) {
+	configPath = path
+}
+
+// SetDifficultyPreset sets the difficulty preset.
+func SetDifficultyPreset(preset string) {
+	switch preset {
+	case "easy":
+		difficultyPreset = config.DifficultyEasy
+	case "normal":
+		difficultyPreset = config.DifficultyNormal
+	case "hard":
+		difficultyPreset = config.DifficultyHard
+	case "fixed":
+		difficultyPreset = config.DifficultyFixed
+	default:
+		difficultyPreset = "" // Use config default
+	}
+}
 
 // GameMode indicates the type of opponent.
 type GameMode int
@@ -65,43 +81,26 @@ type Game struct {
 	serveDelay int  // Ticks to wait before serving
 
 	// Mode and settings
-	mode         GameMode
-	runtime      core.RuntimeConfig
-	paddleHeight int
-	paddleWidth  int
-	paddleOffset int
-	ballSpeed    float64
-	paddleSpeed  float64
-	winScore     int
-	cpuSkill     float64 // CPU reaction skill (0-1), only used in ModeVsCPU
-	rng          *rand.Rand
-	tickCount    int
+	mode       GameMode
+	runtime    core.RuntimeConfig
+	cfg        config.PongConfig
+	difficulty *config.DifficultyManager
+	cpuSkill   float64 // Current CPU skill (0-1), only used in ModeVsCPU
+	rng        *rand.Rand
+	tickCount  int
 }
 
 // New creates a new Pong game instance (vs CPU mode).
 func New() *Game {
 	return &Game{
-		mode:         ModeVsCPU,
-		paddleHeight: DefaultPaddleHeight,
-		paddleWidth:  DefaultPaddleWidth,
-		paddleOffset: DefaultPaddleOffset,
-		ballSpeed:    DefaultBallSpeed,
-		paddleSpeed:  DefaultPaddleSpeed,
-		winScore:     DefaultWinScore,
-		cpuSkill:     DefaultCPUReactionMin,
+		mode: ModeVsCPU,
 	}
 }
 
 // NewOnline creates a new Pong game instance for online multiplayer.
 func NewOnline() *Game {
 	return &Game{
-		mode:         ModeOnline,
-		paddleHeight: DefaultPaddleHeight,
-		paddleWidth:  DefaultPaddleWidth,
-		paddleOffset: DefaultPaddleOffset,
-		ballSpeed:    DefaultBallSpeed,
-		paddleSpeed:  DefaultPaddleSpeed,
-		winScore:     DefaultWinScore,
+		mode: ModeOnline,
 	}
 }
 
@@ -125,13 +124,35 @@ func (g *Game) Reset(runtime core.RuntimeConfig) {
 	g.runtime = runtime
 	g.rng = rand.New(rand.NewSource(runtime.Seed))
 
-	// Adjust paddle height based on screen size
-	g.paddleHeight = core.Clamp(runtime.ScreenH/5, 3, 7)
+	// Load game config
+	cfg, err := config.LoadPong(configPath)
+	if err != nil {
+		cfg = config.DefaultPongConfig()
+	}
+
+	// Apply difficulty preset if set
+	if difficultyPreset != "" {
+		config.ApplyPongPreset(&cfg, difficultyPreset)
+	}
+
+	g.cfg = cfg
+
+	// Initialize difficulty manager
+	g.difficulty = config.NewDifficultyManager(cfg.Difficulty)
+
+	// Initialize CPU skill
+	g.cpuSkill = cfg.CPU.MinSkill
+
+	// Adjust paddle height based on screen size (use config as base)
+	paddleHeight := core.Clamp(runtime.ScreenH/5, 3, cfg.Paddles.Height+2)
+	if paddleHeight < cfg.Paddles.Height {
+		paddleHeight = cfg.Paddles.Height
+	}
 
 	// Center paddles vertically
 	centerY := float64(runtime.ScreenH) / 2.0
-	g.paddle1Y = centerY - float64(g.paddleHeight)/2.0
-	g.paddle2Y = centerY - float64(g.paddleHeight)/2.0
+	g.paddle1Y = centerY - float64(paddleHeight)/2.0
+	g.paddle2Y = centerY - float64(paddleHeight)/2.0
 
 	// Reset scores
 	g.score1 = 0
@@ -148,14 +169,14 @@ func (g *Game) Reset(runtime core.RuntimeConfig) {
 // startServe prepares to serve the ball.
 func (g *Game) startServe(server int) {
 	g.serving = true
-	g.serveDelay = 60 // 1 second at 60fps
+	g.serveDelay = g.cfg.Gameplay.ServeDelay
 
 	// Center ball
 	g.ballX = float64(g.runtime.ScreenW) / 2.0
 	g.ballY = float64(g.runtime.ScreenH) / 2.0
 
 	// Ball velocity towards the player who was scored against
-	speed := g.ballSpeed
+	speed := g.cfg.Physics.BallSpeed
 	if server == 1 {
 		g.ballVX = -speed
 	} else {
@@ -206,33 +227,37 @@ func (g *Game) StepMulti(input core.MultiInputFrame) core.StepResult {
 	}
 
 	// Update Player 1 paddle
+	paddleSpeed := g.cfg.Physics.PaddleSpeed
 	if p1Input.Has(core.ActionUp) || p1Input.Has(core.ActionJump) {
-		g.paddle1Y -= g.paddleSpeed
+		g.paddle1Y -= paddleSpeed
 	}
 	if p1Input.Has(core.ActionDown) || p1Input.Has(core.ActionDuck) {
-		g.paddle1Y += g.paddleSpeed
+		g.paddle1Y += paddleSpeed
 	}
 
 	// Clamp Player 1 paddle
-	maxY := float64(g.runtime.ScreenH - g.paddleHeight - 1)
+	paddleHeight := g.cfg.Paddles.Height
+	maxY := float64(g.runtime.ScreenH - paddleHeight - 1)
 	g.paddle1Y = core.ClampF(g.paddle1Y, 1, maxY)
 
 	// Update Player 2 paddle based on mode
 	if g.mode == ModeOnline {
 		// Online mode: use actual player input
 		if p2Input.Has(core.ActionUp) || p2Input.Has(core.ActionJump) {
-			g.paddle2Y -= g.paddleSpeed
+			g.paddle2Y -= paddleSpeed
 		}
 		if p2Input.Has(core.ActionDown) || p2Input.Has(core.ActionDuck) {
-			g.paddle2Y += g.paddleSpeed
+			g.paddle2Y += paddleSpeed
 		}
 		g.paddle2Y = core.ClampF(g.paddle2Y, 1, maxY)
 	} else {
 		// CPU mode
 		g.updateCPU()
-		// Gradually increase CPU skill
-		if g.tickCount%600 == 0 && g.cpuSkill < DefaultCPUReactionMax {
-			g.cpuSkill += 0.02
+		// Update CPU skill based on difficulty progression
+		if g.difficulty.IsEnabled() {
+			level := g.difficulty.Level(g.score1+g.score2, g.tickCount)
+			skillRange := g.cfg.CPU.MaxSkill - g.cfg.CPU.MinSkill
+			g.cpuSkill = g.cfg.CPU.MinSkill + skillRange*level
 		}
 	}
 
@@ -246,8 +271,10 @@ func (g *Game) StepMulti(input core.MultiInputFrame) core.StepResult {
 
 // updateCPU handles CPU paddle movement.
 func (g *Game) updateCPU() {
+	paddleHeight := g.cfg.Paddles.Height
+
 	// CPU tracks ball with some imperfection
-	targetY := g.ballY - float64(g.paddleHeight)/2.0
+	targetY := g.ballY - float64(paddleHeight)/2.0
 
 	// Add some "reaction time" - CPU doesn't perfectly follow
 	diff := targetY - g.paddle2Y
@@ -255,7 +282,7 @@ func (g *Game) updateCPU() {
 	// Only move if ball is coming towards CPU
 	if g.ballVX > 0 {
 		// Move towards target with skill-based speed
-		moveSpeed := g.paddleSpeed * g.cpuSkill
+		moveSpeed := g.cfg.Physics.PaddleSpeed * g.cpuSkill
 		if math.Abs(diff) > moveSpeed {
 			if diff > 0 {
 				g.paddle2Y += moveSpeed
@@ -266,12 +293,17 @@ func (g *Game) updateCPU() {
 	}
 
 	// Clamp CPU paddle
-	maxY := float64(g.runtime.ScreenH - g.paddleHeight - 1)
+	maxY := float64(g.runtime.ScreenH - paddleHeight - 1)
 	g.paddle2Y = core.ClampF(g.paddle2Y, 1, maxY)
 }
 
 // updateBall handles ball physics and collision.
 func (g *Game) updateBall() {
+	paddleHeight := g.cfg.Paddles.Height
+	paddleWidth := g.cfg.Paddles.Width
+	paddleOffset := g.cfg.Paddles.Offset
+	spinFactor := g.cfg.Physics.SpinFactor
+
 	// Move ball
 	g.ballX += g.ballVX
 	g.ballY += g.ballVY
@@ -287,17 +319,17 @@ func (g *Game) updateBall() {
 	}
 
 	// Check paddle collisions
-	paddle1X := float64(g.paddleOffset)
-	paddle2X := float64(g.runtime.ScreenW - g.paddleOffset - g.paddleWidth)
+	paddle1X := float64(paddleOffset)
+	paddle2X := float64(g.runtime.ScreenW - paddleOffset - paddleWidth)
 
 	// Ball hits left paddle (Player 1)
-	if g.ballX <= paddle1X+float64(g.paddleWidth) && g.ballVX < 0 {
-		if g.ballY >= g.paddle1Y && g.ballY <= g.paddle1Y+float64(g.paddleHeight) {
-			g.ballX = paddle1X + float64(g.paddleWidth)
+	if g.ballX <= paddle1X+float64(paddleWidth) && g.ballVX < 0 {
+		if g.ballY >= g.paddle1Y && g.ballY <= g.paddle1Y+float64(paddleHeight) {
+			g.ballX = paddle1X + float64(paddleWidth)
 			g.ballVX = -g.ballVX
 			// Add spin based on where ball hit paddle
-			hitPos := (g.ballY - g.paddle1Y) / float64(g.paddleHeight)
-			g.ballVY += (hitPos - 0.5) * 0.3
+			hitPos := (g.ballY - g.paddle1Y) / float64(paddleHeight)
+			g.ballVY += (hitPos - 0.5) * spinFactor
 			// Slightly increase speed
 			g.ballVX *= 1.02
 		}
@@ -305,19 +337,19 @@ func (g *Game) updateBall() {
 
 	// Ball hits right paddle (Player 2/CPU)
 	if g.ballX >= paddle2X && g.ballVX > 0 {
-		if g.ballY >= g.paddle2Y && g.ballY <= g.paddle2Y+float64(g.paddleHeight) {
+		if g.ballY >= g.paddle2Y && g.ballY <= g.paddle2Y+float64(paddleHeight) {
 			g.ballX = paddle2X - 1
 			g.ballVX = -g.ballVX
 			// Add spin
-			hitPos := (g.ballY - g.paddle2Y) / float64(g.paddleHeight)
-			g.ballVY += (hitPos - 0.5) * 0.3
+			hitPos := (g.ballY - g.paddle2Y) / float64(paddleHeight)
+			g.ballVY += (hitPos - 0.5) * spinFactor
 			// Slightly increase speed
 			g.ballVX *= 1.02
 		}
 	}
 
 	// Limit ball speed
-	maxSpeed := g.ballSpeed * 3
+	maxSpeed := g.cfg.Physics.BallSpeed * g.cfg.Physics.MaxBallSpeed
 	if math.Abs(g.ballVX) > maxSpeed {
 		g.ballVX = maxSpeed * math.Copysign(1, g.ballVX)
 	}
@@ -329,7 +361,7 @@ func (g *Game) updateBall() {
 	if g.ballX < 0 {
 		// Player 2 scores
 		g.score2++
-		if g.score2 >= g.winScore {
+		if g.score2 >= g.cfg.Gameplay.WinScore {
 			g.gameOver = true
 			g.winner = 2
 		} else {
@@ -340,7 +372,7 @@ func (g *Game) updateBall() {
 	if g.ballX > float64(g.runtime.ScreenW) {
 		// Player 1 scores
 		g.score1++
-		if g.score1 >= g.winScore {
+		if g.score1 >= g.cfg.Gameplay.WinScore {
 			g.gameOver = true
 			g.winner = 1
 		} else {
@@ -353,6 +385,10 @@ func (g *Game) updateBall() {
 func (g *Game) Render(dst *core.Screen) {
 	dst.Clear()
 
+	paddleHeight := g.cfg.Paddles.Height
+	paddleWidth := g.cfg.Paddles.Width
+	paddleOffset := g.cfg.Paddles.Offset
+
 	// Draw center line (net)
 	centerX := dst.Width() / 2
 	for y := 1; y < dst.Height()-1; y += 2 {
@@ -360,10 +396,10 @@ func (g *Game) Render(dst *core.Screen) {
 	}
 
 	// Draw paddles
-	paddle1X := g.paddleOffset
-	paddle2X := dst.Width() - g.paddleOffset - g.paddleWidth
+	paddle1X := paddleOffset
+	paddle2X := dst.Width() - paddleOffset - paddleWidth
 
-	for i := range g.paddleHeight {
+	for i := range paddleHeight {
 		dst.Set(paddle1X, int(g.paddle1Y)+i, PaddleChar)
 		dst.Set(paddle2X, int(g.paddle2Y)+i, PaddleChar)
 	}

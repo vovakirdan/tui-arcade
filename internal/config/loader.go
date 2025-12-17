@@ -116,3 +116,53 @@ func ApplyDinoPreset(cfg *DinoConfig, preset DifficultyPreset) {
 		cfg.Difficulty.InitialLevel = InitialLevelForPreset(preset)
 	}
 }
+
+// LoadPong loads Pong configuration.
+// Search order: customPath -> ~/.arcade/configs/pong.yaml -> ./configs/pong.yaml -> embedded default
+func LoadPong(customPath string) (PongConfig, error) {
+	var cfg PongConfig
+
+	// Try custom path first
+	if customPath != "" {
+		data, err := os.ReadFile(customPath)
+		if err != nil {
+			return cfg, fmt.Errorf("failed to read config %s: %w", customPath, err)
+		}
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return cfg, fmt.Errorf("failed to parse config %s: %w", customPath, err)
+		}
+		return cfg, nil
+	}
+
+	// Try user config directory
+	if userCfgPath := userConfigPath("pong.yaml"); userCfgPath != "" {
+		if data, err := os.ReadFile(userCfgPath); err == nil {
+			if err := yaml.Unmarshal(data, &cfg); err == nil {
+				return cfg, nil
+			}
+		}
+	}
+
+	// Try local configs directory
+	if data, err := os.ReadFile("configs/pong.yaml"); err == nil {
+		if err := yaml.Unmarshal(data, &cfg); err == nil {
+			return cfg, nil
+		}
+	}
+
+	// Use embedded default YAML
+	if err := yaml.Unmarshal(defaultPongYAML, &cfg); err != nil {
+		return DefaultPongConfig(), nil // Fallback to hardcoded if embed fails
+	}
+	return cfg, nil
+}
+
+// ApplyPongPreset modifies the config based on a difficulty preset.
+func ApplyPongPreset(cfg *PongConfig, preset DifficultyPreset) {
+	if preset == DifficultyFixed {
+		cfg.Difficulty.Enabled = false
+	} else {
+		cfg.Difficulty.Enabled = true
+		cfg.Difficulty.InitialLevel = InitialLevelForPreset(preset)
+	}
+}

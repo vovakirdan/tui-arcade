@@ -1,6 +1,25 @@
 package core
 
-import "github.com/vovakirdan/tui-arcade/internal/multiplayer"
+// PlayerID identifies a player in a game.
+// Player1 is always the local human player, Player2 can be CPU or remote player.
+type PlayerID int
+
+const (
+	Player1 PlayerID = 1
+	Player2 PlayerID = 2
+)
+
+// String returns a human-readable name for the player.
+func (p PlayerID) String() string {
+	switch p {
+	case Player1:
+		return "Player 1"
+	case Player2:
+		return "Player 2"
+	default:
+		return "Unknown"
+	}
+}
 
 // Action represents a semantic game action, abstracted from physical key presses.
 // This allows games to work with high-level intents rather than raw input.
@@ -99,19 +118,19 @@ func (f InputFrame) Clone() InputFrame {
 // Games consume this interface without knowing input source.
 type MultiInputFrame struct {
 	// ByPlayer maps player IDs to their input frames.
-	ByPlayer map[multiplayer.PlayerID]InputFrame
+	ByPlayer map[PlayerID]InputFrame
 }
 
 // NewMultiInputFrame creates an empty multi-input frame.
 func NewMultiInputFrame() MultiInputFrame {
 	return MultiInputFrame{
-		ByPlayer: make(map[multiplayer.PlayerID]InputFrame),
+		ByPlayer: make(map[PlayerID]InputFrame),
 	}
 }
 
 // Player returns the input frame for a specific player.
 // Returns an empty frame if player has no input.
-func (m MultiInputFrame) Player(id multiplayer.PlayerID) InputFrame {
+func (m MultiInputFrame) Player(id PlayerID) InputFrame {
 	if m.ByPlayer == nil {
 		return NewInputFrame()
 	}
@@ -122,21 +141,21 @@ func (m MultiInputFrame) Player(id multiplayer.PlayerID) InputFrame {
 }
 
 // SetPlayer sets the input frame for a specific player.
-func (m *MultiInputFrame) SetPlayer(id multiplayer.PlayerID, frame InputFrame) {
+func (m *MultiInputFrame) SetPlayer(id PlayerID, frame InputFrame) {
 	if m.ByPlayer == nil {
-		m.ByPlayer = make(map[multiplayer.PlayerID]InputFrame)
+		m.ByPlayer = make(map[PlayerID]InputFrame)
 	}
 	m.ByPlayer[id] = frame
 }
 
-// Player1 returns the input frame for Player 1 (convenience method).
-func (m MultiInputFrame) Player1() InputFrame {
-	return m.Player(multiplayer.Player1)
+// Player1Frame returns the input frame for Player 1 (convenience method).
+func (m MultiInputFrame) Player1Frame() InputFrame {
+	return m.Player(Player1)
 }
 
-// Player2 returns the input frame for Player 2 (convenience method).
-func (m MultiInputFrame) Player2() InputFrame {
-	return m.Player(multiplayer.Player2)
+// Player2Frame returns the input frame for Player 2 (convenience method).
+func (m MultiInputFrame) Player2Frame() InputFrame {
+	return m.Player(Player2)
 }
 
 // Clear resets all player inputs for the next frame.

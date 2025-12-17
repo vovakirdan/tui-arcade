@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/charmbracelet/wish/bubbletea"
 
 	"github.com/vovakirdan/tui-arcade/internal/core"
+	"github.com/vovakirdan/tui-arcade/internal/games/pong"
 	"github.com/vovakirdan/tui-arcade/internal/multiplayer"
 	"github.com/vovakirdan/tui-arcade/internal/registry"
 	"github.com/vovakirdan/tui-arcade/internal/storage"
@@ -50,10 +52,12 @@ func DefaultSSHServerConfig() SSHServerConfig {
 
 // SSHServer wraps a Wish SSH server for the arcade.
 type SSHServer struct {
-	config SSHServerConfig
-	server *ssh.Server
-	store  *storage.Store
-	logger *log.Logger
+	config      SSHServerConfig
+	server      *ssh.Server
+	store       *storage.Store
+	logger      *log.Logger
+	coordinator *multiplayer.Coordinator
+	sessions    *multiplayer.SessionRegistry
 }
 
 // NewSSHServer creates a new SSH server with the given configuration.
@@ -70,10 +74,24 @@ func NewSSHServer(cfg SSHServerConfig) (*SSHServer, error) {
 		// Continue without storage
 	}
 
+	// Create session registry
+	sessions := multiplayer.NewSessionRegistry()
+
+	// Create coordinator with game factory
+	coordCfg := multiplayer.DefaultCoordinatorConfig()
+	coordinator := multiplayer.NewCoordinator(coordCfg, createOnlineGame, sessions)
+
+	// Wire up storage for match results
+	if store != nil {
+		coordinator.SetResultSaver(store)
+	}
+
 	srv := &SSHServer{
-		config: cfg,
-		store:  store,
-		logger: logger,
+		config:      cfg,
+		store:       store,
+		logger:      logger,
+		coordinator: coordinator,
+		sessions:    sessions,
 	}
 
 	// Resolve host key path
@@ -132,8 +150,15 @@ func (s *SSHServer) teaHandler(sshSession ssh.Session) (tea.Model, []tea.Program
 		Seed:     time.Now().UnixNano(),
 	}
 
+	// Create session ID and channel session for coordinator communication
+	sessionID := multiplayer.SessionID(fmt.Sprintf("%s-%d", sshSession.User(), time.Now().UnixNano()))
+	channelSession := multiplayer.NewChannelSession(sessionID, 64)
+
+	// Register session with registry
+	s.sessions.Register(channelSession)
+
 	// Create session model that handles menu + game flow
-	model := NewSessionModel(s.store, cfg, sshSession.User())
+	model := NewSessionModel(s.store, cfg, sshSession.User(), sessionID, channelSession, s.coordinator)
 
 	return model, []tea.ProgramOption{
 		tea.WithAltScreen(),
@@ -159,6 +184,9 @@ func (s *SSHServer) loggingMiddleware(next ssh.Handler) ssh.Handler {
 func (s *SSHServer) ListenAndServe() error {
 	s.logger.Info("starting SSH server", "address", s.config.Address)
 
+	// Start coordinator
+	s.coordinator.Start()
+
 	// Setup signal handling for graceful shutdown
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
@@ -179,6 +207,9 @@ func (s *SSHServer) Shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Stop coordinator
+	s.coordinator.Stop()
+
 	if s.store != nil {
 		s.store.Close()
 	}
@@ -191,30 +222,66 @@ func (s *SSHServer) Addr() string {
 	return s.config.Address
 }
 
+// createOnlineGame is the factory function for creating online game instances.
+func createOnlineGame(gameID string, cfg core.RuntimeConfig) (multiplayer.OnlineGame, error) {
+	switch gameID {
+	case "pong":
+		game := pong.NewOnline()
+		game.Reset(cfg)
+		return game, nil
+	default:
+		return nil, fmt.Errorf("game %q does not support online multiplayer", gameID)
+	}
+}
+
+// SessionState represents the current state of the session.
+type SessionState int
+
+const (
+	SessionStateMenu SessionState = iota
+	SessionStatePongMode
+	SessionStateOnlineLobby
+	SessionStateInGame
+	SessionStateOnlineGame
+)
+
 // SessionModel manages the full arcade session flow: menu -> game -> menu.
 // This is the top-level model used for SSH sessions.
 type SessionModel struct {
-	store     *storage.Store
-	config    core.RuntimeConfig
-	username  string
-	sessionID multiplayer.SessionID
+	store          *storage.Store
+	config         core.RuntimeConfig
+	username       string
+	sessionID      multiplayer.SessionID
+	channelSession *multiplayer.ChannelSession
+	coordinator    *multiplayer.Coordinator
+
+	state     SessionState
 	menu      MenuModel
+	pongMode  PongModeModel
+	lobby     OnlineLobbyModel
 	game      registry.Game
 	gameModel *GameModel
-	inGame    bool
 	quitting  bool
 }
 
 // NewSessionModel creates a new session model.
-func NewSessionModel(store *storage.Store, cfg core.RuntimeConfig, username string) SessionModel {
-	sessionID := multiplayer.SessionID(fmt.Sprintf("%s-%d", username, time.Now().UnixNano()))
-
+func NewSessionModel(
+	store *storage.Store,
+	cfg core.RuntimeConfig,
+	username string,
+	sessionID multiplayer.SessionID,
+	channelSession *multiplayer.ChannelSession,
+	coordinator *multiplayer.Coordinator,
+) SessionModel {
 	return SessionModel{
-		store:     store,
-		config:    cfg,
-		username:  username,
-		sessionID: sessionID,
-		menu:      NewMenuModel(store, cfg),
+		store:          store,
+		config:         cfg,
+		username:       username,
+		sessionID:      sessionID,
+		channelSession: channelSession,
+		coordinator:    coordinator,
+		state:          SessionStateMenu,
+		menu:           NewMenuModel(store, cfg),
 	}
 }
 
@@ -231,10 +298,19 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.ScreenH = wsm.Height
 	}
 
-	if m.inGame && m.gameModel != nil {
+	switch m.state {
+	case SessionStateMenu:
+		return m.updateMenu(msg)
+	case SessionStatePongMode:
+		return m.updatePongMode(msg)
+	case SessionStateOnlineLobby:
+		return m.updateLobby(msg)
+	case SessionStateInGame:
 		return m.updateGame(msg)
+	case SessionStateOnlineGame:
+		return m.updateOnlineGame(msg)
 	}
-	return m.updateMenu(msg)
+	return m, nil
 }
 
 // updateMenu handles updates when in menu mode.
@@ -248,37 +324,153 @@ func (m SessionModel) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Check if user quit
 	if m.menu.IsQuitting() {
 		m.quitting = true
+		m.notifyDisconnect()
 		return m, tea.Quit
 	}
 
 	// Check if game was selected
 	if selected := m.menu.Selected(); selected != nil {
-		// Create the game
-		game, err := registry.Create(selected.GameID)
-		if err != nil {
-			// Shouldn't happen since menu only shows registered games
-			return m, nil
+		m.config = m.menu.Config()
+
+		// Special handling for Pong - show mode selection
+		if selected.GameID == "pong" {
+			m.state = SessionStatePongMode
+			m.pongMode = NewPongModeModel(m.config.ScreenW, m.config.ScreenH)
+			return m, m.pongMode.Init()
 		}
 
-		m.game = game
-		m.config = m.menu.Config() // Get possibly updated config from resize
-
-		// Create match for this game session
-		match := multiplayer.NewMatch(
-			multiplayer.MatchID(fmt.Sprintf("match-%d", time.Now().UnixNano())),
-			selected.Mode,
-			m.sessionID,
-		)
-
-		// Create game model
-		gameModel := NewGameModel(game, m.store, m.config, match)
-		m.gameModel = &gameModel
-		m.inGame = true
-
-		return m, m.gameModel.Init()
+		// For other games, start directly
+		return m.startLocalGame(selected.GameID, selected.Mode)
 	}
 
 	return m, cmd
+}
+
+// updatePongMode handles Pong mode selection.
+func (m SessionModel) updatePongMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	newModel, cmd := m.pongMode.Update(msg)
+	if pongModel, ok := newModel.(PongModeModel); ok {
+		m.pongMode = pongModel
+	}
+
+	// Check if user quit
+	if m.pongMode.IsQuitting() {
+		m.quitting = true
+		m.notifyDisconnect()
+		return m, tea.Quit
+	}
+
+	// Check for back
+	if m.pongMode.WantsBack() {
+		m.state = SessionStateMenu
+		m.menu = NewMenuModel(m.store, m.config)
+		return m, m.menu.Init()
+	}
+
+	// Check if mode was selected
+	if !m.pongMode.IsChoosing() {
+		mode := m.pongMode.Selected()
+		if mode == multiplayer.MatchModeOnlinePvP {
+			// Start online lobby
+			m.state = SessionStateOnlineLobby
+			m.lobby = NewOnlineLobbyModel(
+				"pong",
+				m.sessionID,
+				m.coordinator,
+				m.channelSession.Events(),
+				m.config.ScreenW,
+				m.config.ScreenH,
+			)
+			return m, m.lobby.Init()
+		}
+		// Start vs CPU game
+		return m.startLocalGame("pong", multiplayer.MatchModeVsCPU)
+	}
+
+	return m, cmd
+}
+
+// updateLobby handles online lobby updates.
+func (m SessionModel) updateLobby(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	newModel, cmd := m.lobby.Update(msg)
+	if lobbyModel, ok := newModel.(OnlineLobbyModel); ok {
+		m.lobby = lobbyModel
+	}
+
+	// Check if user quit
+	if m.lobby.IsQuitting() {
+		m.quitting = true
+		m.notifyDisconnect()
+		return m, tea.Quit
+	}
+
+	// Check for back to menu
+	if m.lobby.BackToMenu() {
+		m.state = SessionStateMenu
+		m.menu = NewMenuModel(m.store, m.config)
+		return m, m.menu.Init()
+	}
+
+	// Check if match started
+	if m.lobby.State() == OnlineStateInMatch {
+		m.state = SessionStateOnlineGame
+		// Online game rendering will be handled by snapshot events
+		return m, m.waitForEvents()
+	}
+
+	return m, cmd
+}
+
+// startLocalGame starts a local (solo/vs CPU) game.
+func (m SessionModel) startLocalGame(gameID string, mode multiplayer.MatchMode) (tea.Model, tea.Cmd) {
+	game, err := registry.Create(gameID)
+	if err != nil {
+		return m, nil
+	}
+
+	m.game = game
+
+	// Create match for this game session
+	match := multiplayer.NewMatch(
+		multiplayer.MatchID(fmt.Sprintf("match-%d", time.Now().UnixNano())),
+		mode,
+		m.sessionID,
+	)
+
+	// Create game model
+	gameModel := NewGameModel(game, m.store, m.config, match)
+	m.gameModel = &gameModel
+	m.state = SessionStateInGame
+
+	return m, m.gameModel.Init()
+}
+
+// waitForEvents returns a command that waits for coordinator events.
+func (m SessionModel) waitForEvents() tea.Cmd {
+	return func() tea.Msg {
+		if m.channelSession == nil {
+			return nil
+		}
+		evt, ok := <-m.channelSession.Events()
+		if !ok {
+			return nil
+		}
+		return evt
+	}
+}
+
+// notifyDisconnect notifies the coordinator that this session is disconnecting.
+func (m SessionModel) notifyDisconnect() {
+	if m.coordinator != nil {
+		m.coordinator.Send(multiplayer.SessionDisconnectedMsg{
+			SessionID: m.sessionID,
+		})
+	}
+	if m.channelSession != nil {
+		m.channelSession.Close()
+	}
 }
 
 // updateGame handles updates when in game mode.
@@ -291,7 +483,7 @@ func (m SessionModel) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Check if user quit game (back to menu)
 	if m.gameModel.BackToMenu() {
-		m.inGame = false
+		m.state = SessionStateMenu
 		m.gameModel = nil
 		m.game = nil
 		// Reset menu state
@@ -302,10 +494,75 @@ func (m SessionModel) updateGame(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Check if user quit entirely
 	if m.gameModel.IsQuitting() {
 		m.quitting = true
+		m.notifyDisconnect()
 		return m, tea.Quit
 	}
 
 	return m, cmd
+}
+
+// updateOnlineGame handles updates when in online multiplayer game.
+func (m SessionModel) updateOnlineGame(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		return m.handleOnlineGameKey(msg)
+	case multiplayer.SnapshotEvent:
+		// Game state snapshot received from coordinator
+		// TODO: Render game state from snapshot
+		return m, m.waitForEvents()
+	case multiplayer.MatchEndedEvent:
+		// Match ended - return to menu
+		m.state = SessionStateMenu
+		m.menu = NewMenuModel(m.store, m.config)
+		return m, m.menu.Init()
+	}
+	return m, m.waitForEvents()
+}
+
+// handleOnlineGameKey handles keyboard input during online game.
+func (m SessionModel) handleOnlineGameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+
+	// Global quit
+	if key == "ctrl+c" {
+		m.quitting = true
+		m.notifyDisconnect()
+		return m, tea.Quit
+	}
+
+	// Back to menu (Esc)
+	if key == "esc" {
+		// Send leave match message
+		m.coordinator.Send(multiplayer.LeaveMatchMsg{
+			SessionID: m.sessionID,
+			MatchID:   m.lobby.MatchID(),
+		})
+		m.state = SessionStateMenu
+		m.menu = NewMenuModel(m.store, m.config)
+		return m, m.menu.Init()
+	}
+
+	// Game input - map keys to input frame and send to coordinator
+	input := core.NewInputFrame()
+	hasInput := false
+	switch key {
+	case "up", "w":
+		input.Set(core.ActionUp)
+		hasInput = true
+	case "down", "s":
+		input.Set(core.ActionDown)
+		hasInput = true
+	}
+
+	if hasInput {
+		m.coordinator.Send(multiplayer.PlayerInputMsg{
+			MatchID: m.lobby.MatchID(),
+			Player:  m.lobby.Side(),
+			Input:   input,
+		})
+	}
+
+	return m, nil
 }
 
 // View renders the current view.
@@ -314,11 +571,44 @@ func (m SessionModel) View() string {
 		return ""
 	}
 
-	if m.inGame && m.gameModel != nil {
-		return m.gameModel.View()
+	switch m.state {
+	case SessionStateMenu:
+		return m.menu.View()
+	case SessionStatePongMode:
+		return m.pongMode.View()
+	case SessionStateOnlineLobby:
+		return m.lobby.View()
+	case SessionStateInGame:
+		if m.gameModel != nil {
+			return m.gameModel.View()
+		}
+	case SessionStateOnlineGame:
+		return m.viewOnlineGame()
 	}
 
 	return m.menu.View()
+}
+
+// viewOnlineGame renders the online game view based on latest snapshot.
+func (m SessionModel) viewOnlineGame() string {
+	// For now, show a placeholder. Later we'll render from snapshots.
+	var b strings.Builder
+
+	b.WriteString("\n")
+	b.WriteString(centerText("ONLINE PONG", m.config.ScreenW))
+	b.WriteString("\n\n")
+
+	sideText := "LEFT (P1)"
+	if m.lobby.Side() == core.Player2 {
+		sideText = "RIGHT (P2)"
+	}
+	b.WriteString(centerText(fmt.Sprintf("You are: %s", sideText), m.config.ScreenW))
+	b.WriteString("\n\n")
+	b.WriteString(centerText("Game in progress...", m.config.ScreenW))
+	b.WriteString("\n\n")
+	b.WriteString(centerText("W/Up: Move up  |  S/Down: Move down  |  Esc: Leave", m.config.ScreenW))
+
+	return b.String()
 }
 
 // GameModel wraps a game with multiplayer support and back-to-menu capability.
@@ -399,7 +689,7 @@ func (m GameModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleTick processes simulation ticks.
 func (m GameModel) handleTick() (tea.Model, tea.Cmd) {
 	// Check for restart
-	p1Input := m.inputFrame.Player1()
+	p1Input := m.inputFrame.Player1Frame()
 	if p1Input.Has(core.ActionRestart) && m.gameState.GameOver {
 		m.config.Seed = time.Now().UnixNano()
 		m.game.Reset(m.config)

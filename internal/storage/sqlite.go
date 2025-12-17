@@ -10,6 +10,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite" // Pure Go SQLite driver
+
+	"github.com/vovakirdan/tui-arcade/internal/multiplayer"
 )
 
 // Store manages the SQLite database connection for score persistence.
@@ -23,6 +25,21 @@ type ScoreEntry struct {
 	GameID    string
 	Score     int
 	CreatedAt time.Time
+}
+
+// OnlineMatchResult represents the outcome of an online PvP match.
+type OnlineMatchResult struct {
+	ID             int64
+	MatchID        string
+	GameID         string
+	Player1Session string
+	Player2Session string
+	Score1         int
+	Score2         int
+	WinnerSession  string // Empty if draw or disconnect
+	EndReason      string // "completed", "disconnect", "cancelled"
+	Duration       int    // Duration in seconds
+	CreatedAt      time.Time
 }
 
 // Open creates or opens a SQLite database at the given path.
@@ -77,6 +94,23 @@ func (s *Store) migrate() error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_scores_game_id ON scores(game_id);
 		CREATE INDEX IF NOT EXISTS idx_scores_top ON scores(game_id, score DESC);
+
+		CREATE TABLE IF NOT EXISTS online_matches (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			match_id TEXT NOT NULL UNIQUE,
+			game_id TEXT NOT NULL,
+			player1_session TEXT NOT NULL,
+			player2_session TEXT NOT NULL,
+			score1 INTEGER NOT NULL DEFAULT 0,
+			score2 INTEGER NOT NULL DEFAULT 0,
+			winner_session TEXT,
+			end_reason TEXT NOT NULL,
+			duration_secs INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_online_matches_game_id ON online_matches(game_id);
+		CREATE INDEX IF NOT EXISTS idx_online_matches_player1 ON online_matches(player1_session);
+		CREATE INDEX IF NOT EXISTS idx_online_matches_player2 ON online_matches(player2_session);
 	`
 
 	_, err := s.db.Exec(schema)
@@ -222,3 +256,234 @@ func (s *Store) ClearScores(gameID string) error {
 	}
 	return nil
 }
+
+// SaveOnlineMatch records the result of an online PvP match.
+// Returns the ID of the inserted record.
+func (s *Store) SaveOnlineMatch(result OnlineMatchResult) (int64, error) {
+	res, err := s.db.Exec(
+		`INSERT INTO online_matches
+		 (match_id, game_id, player1_session, player2_session, score1, score2, winner_session, end_reason, duration_secs)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		result.MatchID,
+		result.GameID,
+		result.Player1Session,
+		result.Player2Session,
+		result.Score1,
+		result.Score2,
+		result.WinnerSession,
+		result.EndReason,
+		result.Duration,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("storage: cannot save online match: %w", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("storage: cannot get inserted ID: %w", err)
+	}
+
+	return id, nil
+}
+
+// OnlineMatchByID retrieves an online match by its match ID.
+func (s *Store) OnlineMatchByID(matchID string) (*OnlineMatchResult, error) {
+	var result OnlineMatchResult
+	var createdAt any
+	var winnerSession sql.NullString
+
+	err := s.db.QueryRow(
+		`SELECT id, match_id, game_id, player1_session, player2_session,
+		        score1, score2, winner_session, end_reason, duration_secs, created_at
+		 FROM online_matches
+		 WHERE match_id = ?`,
+		matchID,
+	).Scan(
+		&result.ID,
+		&result.MatchID,
+		&result.GameID,
+		&result.Player1Session,
+		&result.Player2Session,
+		&result.Score1,
+		&result.Score2,
+		&winnerSession,
+		&result.EndReason,
+		&result.Duration,
+		&createdAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("storage: cannot query online match: %w", err)
+	}
+
+	if winnerSession.Valid {
+		result.WinnerSession = winnerSession.String
+	}
+
+	// Parse the datetime
+	switch v := createdAt.(type) {
+	case time.Time:
+		result.CreatedAt = v
+	case string:
+		if parsed, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
+			result.CreatedAt = parsed
+		}
+	}
+
+	return &result, nil
+}
+
+// RecentOnlineMatches retrieves the most recent online matches.
+func (s *Store) RecentOnlineMatches(limit int) ([]OnlineMatchResult, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	rows, err := s.db.Query(
+		`SELECT id, match_id, game_id, player1_session, player2_session,
+		        score1, score2, winner_session, end_reason, duration_secs, created_at
+		 FROM online_matches
+		 ORDER BY created_at DESC
+		 LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("storage: cannot query online matches: %w", err)
+	}
+	defer rows.Close()
+
+	var results []OnlineMatchResult
+	for rows.Next() {
+		var result OnlineMatchResult
+		var createdAt any
+		var winnerSession sql.NullString
+
+		if err := rows.Scan(
+			&result.ID,
+			&result.MatchID,
+			&result.GameID,
+			&result.Player1Session,
+			&result.Player2Session,
+			&result.Score1,
+			&result.Score2,
+			&winnerSession,
+			&result.EndReason,
+			&result.Duration,
+			&createdAt,
+		); err != nil {
+			return nil, fmt.Errorf("storage: cannot scan row: %w", err)
+		}
+
+		if winnerSession.Valid {
+			result.WinnerSession = winnerSession.String
+		}
+
+		// Parse the datetime
+		switch v := createdAt.(type) {
+		case time.Time:
+			result.CreatedAt = v
+		case string:
+			if parsed, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
+				result.CreatedAt = parsed
+			}
+		}
+
+		results = append(results, result)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("storage: row iteration error: %w", err)
+	}
+
+	return results, nil
+}
+
+// PlayerMatchHistory retrieves match history for a specific session/player.
+func (s *Store) PlayerMatchHistory(sessionID string, limit int) ([]OnlineMatchResult, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	rows, err := s.db.Query(
+		`SELECT id, match_id, game_id, player1_session, player2_session,
+		        score1, score2, winner_session, end_reason, duration_secs, created_at
+		 FROM online_matches
+		 WHERE player1_session = ? OR player2_session = ?
+		 ORDER BY created_at DESC
+		 LIMIT ?`,
+		sessionID, sessionID, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("storage: cannot query player matches: %w", err)
+	}
+	defer rows.Close()
+
+	var results []OnlineMatchResult
+	for rows.Next() {
+		var result OnlineMatchResult
+		var createdAt any
+		var winnerSession sql.NullString
+
+		if err := rows.Scan(
+			&result.ID,
+			&result.MatchID,
+			&result.GameID,
+			&result.Player1Session,
+			&result.Player2Session,
+			&result.Score1,
+			&result.Score2,
+			&winnerSession,
+			&result.EndReason,
+			&result.Duration,
+			&createdAt,
+		); err != nil {
+			return nil, fmt.Errorf("storage: cannot scan row: %w", err)
+		}
+
+		if winnerSession.Valid {
+			result.WinnerSession = winnerSession.String
+		}
+
+		// Parse the datetime
+		switch v := createdAt.(type) {
+		case time.Time:
+			result.CreatedAt = v
+		case string:
+			if parsed, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
+				result.CreatedAt = parsed
+			}
+		}
+
+		results = append(results, result)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("storage: row iteration error: %w", err)
+	}
+
+	return results, nil
+}
+
+// SaveMatchResult implements multiplayer.MatchResultSaver.
+// This adapter allows the coordinator to save match results without direct storage dependency.
+func (s *Store) SaveMatchResult(data multiplayer.MatchResultData) error {
+	result := OnlineMatchResult{
+		MatchID:        data.MatchID,
+		GameID:         data.GameID,
+		Player1Session: data.Player1Session,
+		Player2Session: data.Player2Session,
+		Score1:         data.Score1,
+		Score2:         data.Score2,
+		WinnerSession:  data.WinnerSession,
+		EndReason:      data.EndReason,
+		Duration:       data.DurationSecs,
+	}
+	_, err := s.SaveOnlineMatch(result)
+	return err
+}
+
+// Ensure Store implements MatchResultSaver
+var _ multiplayer.MatchResultSaver = (*Store)(nil)

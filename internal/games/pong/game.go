@@ -1,5 +1,5 @@
-// Package pong implements a classic Pong game with CPU opponent.
-// Player 1 controls the left paddle, CPU controls the right paddle.
+// Package pong implements a classic Pong game supporting both CPU and online PvP modes.
+// Player 1 controls the left paddle, Player 2 (CPU or human) controls the right paddle.
 package pong
 
 import (
@@ -8,6 +8,7 @@ import (
 	"math/rand"
 
 	"github.com/vovakirdan/tui-arcade/internal/core"
+	"github.com/vovakirdan/tui-arcade/internal/multiplayer"
 	"github.com/vovakirdan/tui-arcade/internal/registry"
 )
 
@@ -28,6 +29,16 @@ const (
 	DefaultWinScore       = 5
 	DefaultCPUReactionMin = 0.6  // CPU reaction time (0-1, 1 = perfect)
 	DefaultCPUReactionMax = 0.85 // Max CPU skill
+)
+
+// GameMode indicates the type of opponent.
+type GameMode int
+
+const (
+	// ModeVsCPU is player vs AI.
+	ModeVsCPU GameMode = iota
+	// ModeOnline is player vs player over network.
+	ModeOnline
 )
 
 // Game implements the Pong game logic.
@@ -53,7 +64,8 @@ type Game struct {
 	serving    bool // True when waiting to serve
 	serveDelay int  // Ticks to wait before serving
 
-	// Settings
+	// Mode and settings
+	mode         GameMode
 	runtime      core.RuntimeConfig
 	paddleHeight int
 	paddleWidth  int
@@ -61,14 +73,15 @@ type Game struct {
 	ballSpeed    float64
 	paddleSpeed  float64
 	winScore     int
-	cpuSkill     float64 // CPU reaction skill (0-1)
+	cpuSkill     float64 // CPU reaction skill (0-1), only used in ModeVsCPU
 	rng          *rand.Rand
 	tickCount    int
 }
 
-// New creates a new Pong game instance.
+// New creates a new Pong game instance (vs CPU mode).
 func New() *Game {
 	return &Game{
+		mode:         ModeVsCPU,
 		paddleHeight: DefaultPaddleHeight,
 		paddleWidth:  DefaultPaddleWidth,
 		paddleOffset: DefaultPaddleOffset,
@@ -77,6 +90,24 @@ func New() *Game {
 		winScore:     DefaultWinScore,
 		cpuSkill:     DefaultCPUReactionMin,
 	}
+}
+
+// NewOnline creates a new Pong game instance for online multiplayer.
+func NewOnline() *Game {
+	return &Game{
+		mode:         ModeOnline,
+		paddleHeight: DefaultPaddleHeight,
+		paddleWidth:  DefaultPaddleWidth,
+		paddleOffset: DefaultPaddleOffset,
+		ballSpeed:    DefaultBallSpeed,
+		paddleSpeed:  DefaultPaddleSpeed,
+		winScore:     DefaultWinScore,
+	}
+}
+
+// SetMode changes the game mode.
+func (g *Game) SetMode(mode GameMode) {
+	g.mode = mode
 }
 
 // ID returns the unique identifier for this game.
@@ -136,14 +167,26 @@ func (g *Game) startServe(server int) {
 	g.ballVY = speed * angle
 }
 
-// Step advances the game by one tick.
+// Step advances the game by one tick (single-player interface, used for vs CPU).
 func (g *Game) Step(in core.InputFrame) core.StepResult {
+	// Convert single input to multi-input for Player 1
+	multi := core.NewMultiInputFrame()
+	multi.SetPlayer(multiplayer.Player1, in)
+	return g.StepMulti(multi)
+}
+
+// StepMulti advances the game by one tick using input from multiple players.
+// This is the primary step function used for online multiplayer.
+func (g *Game) StepMulti(input core.MultiInputFrame) core.StepResult {
 	if g.gameOver {
 		return core.StepResult{State: g.State()}
 	}
 
-	// Handle pause toggle
-	if in.Has(core.ActionPause) {
+	p1Input := input.Player(multiplayer.Player1)
+	p2Input := input.Player(multiplayer.Player2)
+
+	// Handle pause toggle (either player can pause)
+	if p1Input.Has(core.ActionPause) || p2Input.Has(core.ActionPause) {
 		g.paused = !g.paused
 	}
 
@@ -163,28 +206,39 @@ func (g *Game) Step(in core.InputFrame) core.StepResult {
 	}
 
 	// Update Player 1 paddle
-	if in.Has(core.ActionUp) || in.Has(core.ActionJump) {
+	if p1Input.Has(core.ActionUp) || p1Input.Has(core.ActionJump) {
 		g.paddle1Y -= g.paddleSpeed
 	}
-	if in.Has(core.ActionDown) || in.Has(core.ActionDuck) {
+	if p1Input.Has(core.ActionDown) || p1Input.Has(core.ActionDuck) {
 		g.paddle1Y += g.paddleSpeed
 	}
 
-	// Clamp paddle positions
+	// Clamp Player 1 paddle
 	maxY := float64(g.runtime.ScreenH - g.paddleHeight - 1)
 	g.paddle1Y = core.ClampF(g.paddle1Y, 1, maxY)
 
-	// Update CPU paddle (Player 2)
-	g.updateCPU()
+	// Update Player 2 paddle based on mode
+	if g.mode == ModeOnline {
+		// Online mode: use actual player input
+		if p2Input.Has(core.ActionUp) || p2Input.Has(core.ActionJump) {
+			g.paddle2Y -= g.paddleSpeed
+		}
+		if p2Input.Has(core.ActionDown) || p2Input.Has(core.ActionDuck) {
+			g.paddle2Y += g.paddleSpeed
+		}
+		g.paddle2Y = core.ClampF(g.paddle2Y, 1, maxY)
+	} else {
+		// CPU mode
+		g.updateCPU()
+		// Gradually increase CPU skill
+		if g.tickCount%600 == 0 && g.cpuSkill < DefaultCPUReactionMax {
+			g.cpuSkill += 0.02
+		}
+	}
 
 	// Update ball if not serving
 	if !g.serving {
 		g.updateBall()
-	}
-
-	// Gradually increase CPU skill
-	if g.tickCount%600 == 0 && g.cpuSkill < DefaultCPUReactionMax {
-		g.cpuSkill += 0.02
 	}
 
 	return core.StepResult{State: g.State()}
@@ -325,22 +379,36 @@ func (g *Game) Render(dst *core.Screen) {
 	dst.DrawText(centerX-5, 0, score1Text)
 	dst.DrawText(centerX+4, 0, score2Text)
 
-	// Draw labels
+	// Draw labels based on mode
 	dst.DrawText(1, 0, "P1")
-	dst.DrawText(dst.Width()-4, 0, "CPU")
+	if g.mode == ModeOnline {
+		dst.DrawText(dst.Width()-3, 0, "P2")
+	} else {
+		dst.DrawText(dst.Width()-4, 0, "CPU")
+	}
 
 	if g.paused {
 		g.drawCenteredMessage(dst, "PAUSED", "Press P to resume")
 	}
 
 	if g.gameOver {
-		var msg string
-		if g.winner == 1 {
-			msg = "YOU WIN!"
+		var msg, subtitle string
+		if g.mode == ModeOnline {
+			if g.winner == 1 {
+				msg = "PLAYER 1 WINS!"
+			} else {
+				msg = "PLAYER 2 WINS!"
+			}
+			subtitle = fmt.Sprintf("%d - %d  |  Press Esc to exit", g.score1, g.score2)
 		} else {
-			msg = "CPU WINS!"
+			if g.winner == 1 {
+				msg = "YOU WIN!"
+			} else {
+				msg = "CPU WINS!"
+			}
+			subtitle = fmt.Sprintf("%d - %d  |  Press R to restart", g.score1, g.score2)
 		}
-		g.drawCenteredMessage(dst, msg, fmt.Sprintf("%d - %d  |  Press R to restart", g.score1, g.score2))
+		g.drawCenteredMessage(dst, msg, subtitle)
 	}
 }
 
@@ -374,6 +442,34 @@ func (g *Game) State() core.GameState {
 		GameOver: g.gameOver,
 		Paused:   g.paused,
 	}
+}
+
+// OnlineGame interface implementation
+
+// IsGameOver returns true if the game has ended.
+func (g *Game) IsGameOver() bool {
+	return g.gameOver
+}
+
+// Winner returns the winning player or 0 if no winner yet.
+func (g *Game) Winner() multiplayer.PlayerID {
+	if !g.gameOver {
+		return 0
+	}
+	if g.winner == 1 {
+		return multiplayer.Player1
+	}
+	return multiplayer.Player2
+}
+
+// Score1 returns Player 1's score.
+func (g *Game) Score1() int {
+	return g.score1
+}
+
+// Score2 returns Player 2's score.
+func (g *Game) Score2() int {
+	return g.score2
 }
 
 // Register the game with the registry

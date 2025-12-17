@@ -2,26 +2,17 @@
 // Currently used for Player vs CPU modes, designed for future SSH session-to-session matches.
 package multiplayer
 
-// PlayerID identifies a player in a game.
+import "github.com/vovakirdan/tui-arcade/internal/core"
+
+// PlayerID is an alias to core.PlayerID for convenience.
 // Player1 is always the local human player, Player2 can be CPU or remote player.
-type PlayerID int
+type PlayerID = core.PlayerID
 
+// Re-export player constants for convenience.
 const (
-	Player1 PlayerID = 1
-	Player2 PlayerID = 2
+	Player1 = core.Player1
+	Player2 = core.Player2
 )
-
-// String returns a human-readable name for the player.
-func (p PlayerID) String() string {
-	switch p {
-	case Player1:
-		return "Player 1"
-	case Player2:
-		return "Player 2"
-	default:
-		return "Unknown"
-	}
-}
 
 // SessionID uniquely identifies a player's session (e.g., SSH connection).
 // Used to track individual connections and potentially pair them for matches.

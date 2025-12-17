@@ -21,6 +21,7 @@ import (
 	"github.com/vovakirdan/tui-arcade/internal/core"
 	"github.com/vovakirdan/tui-arcade/internal/games/breakout"
 	"github.com/vovakirdan/tui-arcade/internal/games/pong"
+	"github.com/vovakirdan/tui-arcade/internal/games/snake"
 	"github.com/vovakirdan/tui-arcade/internal/multiplayer"
 	"github.com/vovakirdan/tui-arcade/internal/registry"
 	"github.com/vovakirdan/tui-arcade/internal/storage"
@@ -242,6 +243,7 @@ const (
 	SessionStateMenu SessionState = iota
 	SessionStatePongMode
 	SessionStateBreakoutMode
+	SessionStateSnakeMode
 	SessionStateOnlineLobby
 	SessionStateInGame
 	SessionStateOnlineGame
@@ -261,6 +263,7 @@ type SessionModel struct {
 	menu         MenuModel
 	pongMode     PongModeModel
 	breakoutMode BreakoutModeModel
+	snakeMode    SnakeModeModel
 	lobby        OnlineLobbyModel
 	game         registry.Game
 	gameModel    *GameModel
@@ -312,6 +315,8 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updatePongMode(msg)
 	case SessionStateBreakoutMode:
 		return m.updateBreakoutMode(msg)
+	case SessionStateSnakeMode:
+		return m.updateSnakeMode(msg)
 	case SessionStateOnlineLobby:
 		return m.updateLobby(msg)
 	case SessionStateInGame:
@@ -353,6 +358,13 @@ func (m SessionModel) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = SessionStateBreakoutMode
 			m.breakoutMode = NewBreakoutModeModel(m.config.ScreenW, m.config.ScreenH)
 			return m, m.breakoutMode.Init()
+		}
+
+		// Special handling for Snake - show mode/level selection
+		if selected.GameID == "snake" {
+			m.state = SessionStateSnakeMode
+			m.snakeMode = NewSnakeModeModel(m.config.ScreenW, m.config.ScreenH)
+			return m, m.snakeMode.Init()
 		}
 
 		// For other games, start directly
@@ -437,6 +449,43 @@ func (m SessionModel) updateBreakoutMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if selection.Level > 0 {
 			breakout.SetStartLevel(selection.Level)
+		}
+		return m.startLocalGame(gameID, multiplayer.MatchModeSolo)
+	}
+
+	return m, cmd
+}
+
+// updateSnakeMode handles Snake mode/level selection.
+func (m SessionModel) updateSnakeMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	newModel, cmd := m.snakeMode.Update(msg)
+	if snakeModel, ok := newModel.(SnakeModeModel); ok {
+		m.snakeMode = snakeModel
+	}
+
+	// Check if user quit
+	if m.snakeMode.IsQuitting() {
+		m.quitting = true
+		m.notifyDisconnect()
+		return m, tea.Quit
+	}
+
+	// Check for back
+	if m.snakeMode.WantsBack() {
+		m.state = SessionStateMenu
+		m.menu = NewMenuModel(m.store, m.config)
+		return m, m.menu.Init()
+	}
+
+	// Check if mode was selected
+	if selection := m.snakeMode.Selected(); selection != nil {
+		gameID := "snake"
+		if selection.Mode == SnakeModeEndless {
+			gameID = "snake_endless"
+		}
+		if selection.Level > 0 {
+			snake.SetStartLevel(selection.Level)
 		}
 		return m.startLocalGame(gameID, multiplayer.MatchModeSolo)
 	}
@@ -646,6 +695,8 @@ func (m SessionModel) View() string {
 		return m.pongMode.View()
 	case SessionStateBreakoutMode:
 		return m.breakoutMode.View()
+	case SessionStateSnakeMode:
+		return m.snakeMode.View()
 	case SessionStateOnlineLobby:
 		return m.lobby.View()
 	case SessionStateInGame:

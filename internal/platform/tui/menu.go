@@ -39,8 +39,8 @@ func NewMenuModel(store *storage.Store, cfg core.RuntimeConfig) MenuModel {
 	items := make([]MenuItem, 0, len(games))
 
 	for _, g := range games {
-		// Skip breakout_endless - it's accessible via Breakout sub-menu
-		if g.ID == "breakout_endless" {
+		// Skip endless modes - they're accessible via sub-menus
+		if g.ID == "breakout_endless" || g.ID == "snake_endless" {
 			continue
 		}
 

@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/wish/bubbletea"
 
 	"github.com/vovakirdan/tui-arcade/internal/core"
+	"github.com/vovakirdan/tui-arcade/internal/games/breakout"
 	"github.com/vovakirdan/tui-arcade/internal/games/pong"
 	"github.com/vovakirdan/tui-arcade/internal/multiplayer"
 	"github.com/vovakirdan/tui-arcade/internal/registry"
@@ -240,6 +241,7 @@ type SessionState int
 const (
 	SessionStateMenu SessionState = iota
 	SessionStatePongMode
+	SessionStateBreakoutMode
 	SessionStateOnlineLobby
 	SessionStateInGame
 	SessionStateOnlineGame
@@ -255,13 +257,14 @@ type SessionModel struct {
 	channelSession *multiplayer.ChannelSession
 	coordinator    *multiplayer.Coordinator
 
-	state     SessionState
-	menu      MenuModel
-	pongMode  PongModeModel
-	lobby     OnlineLobbyModel
-	game      registry.Game
-	gameModel *GameModel
-	quitting  bool
+	state        SessionState
+	menu         MenuModel
+	pongMode     PongModeModel
+	breakoutMode BreakoutModeModel
+	lobby        OnlineLobbyModel
+	game         registry.Game
+	gameModel    *GameModel
+	quitting     bool
 
 	// Online game state
 	onlineGame   *pong.Game   // Local game instance for rendering from snapshots
@@ -307,6 +310,8 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateMenu(msg)
 	case SessionStatePongMode:
 		return m.updatePongMode(msg)
+	case SessionStateBreakoutMode:
+		return m.updateBreakoutMode(msg)
 	case SessionStateOnlineLobby:
 		return m.updateLobby(msg)
 	case SessionStateInGame:
@@ -341,6 +346,13 @@ func (m SessionModel) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = SessionStatePongMode
 			m.pongMode = NewPongModeModel(m.config.ScreenW, m.config.ScreenH)
 			return m, m.pongMode.Init()
+		}
+
+		// Special handling for Breakout - show mode/level selection
+		if selected.GameID == "breakout" {
+			m.state = SessionStateBreakoutMode
+			m.breakoutMode = NewBreakoutModeModel(m.config.ScreenW, m.config.ScreenH)
+			return m, m.breakoutMode.Init()
 		}
 
 		// For other games, start directly
@@ -390,6 +402,43 @@ func (m SessionModel) updatePongMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Start vs CPU game
 		return m.startLocalGame("pong", multiplayer.MatchModeVsCPU)
+	}
+
+	return m, cmd
+}
+
+// updateBreakoutMode handles Breakout mode/level selection.
+func (m SessionModel) updateBreakoutMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	newModel, cmd := m.breakoutMode.Update(msg)
+	if breakoutModel, ok := newModel.(BreakoutModeModel); ok {
+		m.breakoutMode = breakoutModel
+	}
+
+	// Check if user quit
+	if m.breakoutMode.IsQuitting() {
+		m.quitting = true
+		m.notifyDisconnect()
+		return m, tea.Quit
+	}
+
+	// Check for back
+	if m.breakoutMode.WantsBack() {
+		m.state = SessionStateMenu
+		m.menu = NewMenuModel(m.store, m.config)
+		return m, m.menu.Init()
+	}
+
+	// Check if mode was selected
+	if selection := m.breakoutMode.Selected(); selection != nil {
+		gameID := "breakout"
+		if selection.Mode == BreakoutModeEndless {
+			gameID = "breakout_endless"
+		}
+		if selection.Level > 0 {
+			breakout.SetStartLevel(selection.Level)
+		}
+		return m.startLocalGame(gameID, multiplayer.MatchModeSolo)
 	}
 
 	return m, cmd
@@ -595,6 +644,8 @@ func (m SessionModel) View() string {
 		return m.menu.View()
 	case SessionStatePongMode:
 		return m.pongMode.View()
+	case SessionStateBreakoutMode:
+		return m.breakoutMode.View()
 	case SessionStateOnlineLobby:
 		return m.lobby.View()
 	case SessionStateInGame:

@@ -108,11 +108,11 @@ func (m BreakoutModeModel) handleModeSelectKey(action MenuAction) (tea.Model, te
 		case 0: // Campaign
 			m.choosing = false
 			m.selection = BreakoutSelection{Mode: BreakoutModeCampaign, Level: 0}
-			return m, nil
+			return m, tea.Quit
 		case 1: // Endless
 			m.choosing = false
 			m.selection = BreakoutSelection{Mode: BreakoutModeEndless, Level: 0}
-			return m, nil
+			return m, tea.Quit
 		case 2: // Select Level
 			m.inLevelSelect = true
 			m.levelCursor = 0
@@ -146,7 +146,7 @@ func (m BreakoutModeModel) handleLevelSelectKey(action MenuAction) (tea.Model, t
 			Mode:  BreakoutModeCampaign,
 			Level: m.levelCursor + 1, // 1-indexed
 		}
-		return m, nil
+		return m, tea.Quit
 	case MenuActionBack:
 		m.inLevelSelect = false
 	}

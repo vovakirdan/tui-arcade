@@ -154,6 +154,27 @@ type BreakoutGameplay struct {
 	SpeedUpAmount int `yaml:"speed_up_amount"`  // Speed increase per speedup
 }
 
+// SnakeConfig contains all configuration for the Snake game.
+type SnakeConfig struct {
+	Speed      SnakeSpeed       `yaml:"speed"`
+	Gameplay   SnakeGameplay    `yaml:"gameplay"`
+	Difficulty DifficultyConfig `yaml:"difficulty"`
+}
+
+// SnakeSpeed defines speed parameters for Snake.
+type SnakeSpeed struct {
+	InitialMoveEveryTicks int `yaml:"initial_move_every_ticks"` // Ticks between moves (higher = slower)
+	MinMoveEveryTicks     int `yaml:"min_move_every_ticks"`     // Minimum ticks (max speed)
+	SpeedUpPerLevel       int `yaml:"speed_up_per_level"`       // Reduce ticks by this per level
+}
+
+// SnakeGameplay defines gameplay parameters for Snake.
+type SnakeGameplay struct {
+	FoodPerLevel    int `yaml:"food_per_level"`    // Food needed to complete a level
+	InitialLength   int `yaml:"initial_length"`    // Starting snake length
+	EndlessFoodWrap int `yaml:"endless_food_wrap"` // Food count before level change in endless
+}
+
 // DifficultyPreset represents a named difficulty level.
 type DifficultyPreset string
 

@@ -271,3 +271,12 @@ func GetLevel(index int) *Level {
 	}
 	return &Levels[index]
 }
+
+// LevelNames returns the names of all levels.
+func LevelNames() []string {
+	names := make([]string, len(Levels))
+	for i, lvl := range Levels {
+		names[i] = lvl.Name
+	}
+	return names
+}

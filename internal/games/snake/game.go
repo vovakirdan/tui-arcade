@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"strings"
 
+	"github.com/vovakirdan/tui-arcade/internal/config"
 	"github.com/vovakirdan/tui-arcade/internal/core"
 	"github.com/vovakirdan/tui-arcade/internal/registry"
 )
@@ -34,9 +35,11 @@ type Point struct {
 
 // Game implements the Snake game.
 type Game struct {
-	mode           Mode
-	rng            *rand.Rand
-	tick           uint64
+	mode Mode
+	rng  *rand.Rand
+	cfg  config.SnakeConfig
+	tick uint64
+
 	score          int
 	foodEaten      int // Food eaten in current level
 	levelIndex     int // Current level (0-indexed)
@@ -49,7 +52,7 @@ type Game struct {
 	nextDir   Direction // Buffered direction for next move
 	growing   bool      // If true, don't remove tail on next move
 
-	// Map state
+	// Map state - dynamically sized
 	mapWidth   int
 	mapHeight  int
 	walls      map[Point]bool
@@ -73,19 +76,19 @@ type Game struct {
 	levelClearTicks int
 }
 
-// Package-level variables for config/difficulty (like breakout pattern)
+// Package-level variables for config/difficulty
 var (
-	configPath         string //nolint:unused // kept for API compatibility
-	difficultyPreset   string //nolint:unused // kept for API compatibility
+	configPath         string
+	difficultyPreset   string
 	selectedStartLevel int
 )
 
-// SetConfigPath sets the config file path (for compatibility).
+// SetConfigPath sets the config file path.
 func SetConfigPath(path string) {
 	configPath = path
 }
 
-// SetDifficultyPreset sets the difficulty preset (for compatibility).
+// SetDifficultyPreset sets the difficulty preset.
 func SetDifficultyPreset(preset string) {
 	difficultyPreset = preset
 }
@@ -155,6 +158,31 @@ func (g *Game) Reset(cfg core.RuntimeConfig) {
 	g.screenH = cfg.ScreenH
 	g.hudHeight = 2 // Top HUD lines
 
+	// Load game config
+	gameCfg, err := config.LoadSnake(configPath)
+	if err != nil {
+		gameCfg = config.DefaultSnakeConfig()
+	}
+
+	// Apply difficulty preset
+	if difficultyPreset != "" {
+		var preset config.DifficultyPreset
+		switch difficultyPreset {
+		case "easy":
+			preset = config.DifficultyEasy
+		case "normal":
+			preset = config.DifficultyNormal
+		case "hard":
+			preset = config.DifficultyHard
+		case "fixed":
+			preset = config.DifficultyFixed
+		}
+		if preset != "" {
+			config.ApplySnakePreset(&gameCfg, preset)
+		}
+	}
+	g.cfg = gameCfg
+
 	// Apply selected start level (campaign only)
 	if g.mode == ModeCampaign && selectedStartLevel > 0 && selectedStartLevel <= LevelCount() {
 		g.levelIndex = selectedStartLevel - 1
@@ -166,57 +194,46 @@ func (g *Game) Reset(cfg core.RuntimeConfig) {
 	g.loadLevel()
 }
 
-// loadLevel loads the current level's map and spawns the snake.
+// loadLevel loads the current level's map dynamically based on screen size.
 func (g *Game) loadLevel() {
 	level := GetLevel(g.levelIndex % LevelCount())
 	if level == nil {
 		return
 	}
 
-	// In endless mode, increase speed each cycle
-	g.moveEveryTicks = level.MoveEveryTicks
+	// Calculate speed from config
+	g.moveEveryTicks = g.cfg.Speed.InitialMoveEveryTicks - (g.levelIndex * g.cfg.Speed.SpeedUpPerLevel)
+	if g.moveEveryTicks < g.cfg.Speed.MinMoveEveryTicks {
+		g.moveEveryTicks = g.cfg.Speed.MinMoveEveryTicks
+	}
+
+	// In endless mode, additional speed increase each cycle
 	if g.mode == ModeEndless {
 		cycle := g.levelIndex / LevelCount()
-		// Each cycle reduces move interval by 1, minimum 1
-		speedBonus := cycle
-		g.moveEveryTicks = max(1, level.MoveEveryTicks-speedBonus)
+		g.moveEveryTicks = max(g.cfg.Speed.MinMoveEveryTicks, g.moveEveryTicks-cycle)
 	}
+
 	g.moveTicker = 0
 	g.foodEaten = 0
 	g.levelCleared = false
 
-	// Parse layout
-	g.walls = make(map[Point]bool)
-	layout := level.Layout
-	g.mapHeight = len(layout)
-	g.mapWidth = 0
-	for _, row := range layout {
-		if len(row) > g.mapWidth {
-			g.mapWidth = len(row)
-		}
-	}
+	// Use full screen for the map
+	g.mapWidth = g.screenW
+	g.mapHeight = g.screenH - g.hudHeight
 
-	// Check if screen is too small
-	requiredW := g.mapWidth + 2
-	requiredH := g.mapHeight + g.hudHeight + 1
-	if g.screenW < requiredW || g.screenH < requiredH {
+	// Check minimum size
+	if g.mapWidth < 20 || g.mapHeight < 10 {
 		g.tooSmall = true
 		return
 	}
 	g.tooSmall = false
 
-	// Center the map
-	g.mapOffsetX = (g.screenW - g.mapWidth) / 2
+	// No offset - use full screen
+	g.mapOffsetX = 0
 	g.mapOffsetY = g.hudHeight
 
-	// Parse walls
-	for y, row := range layout {
-		for x, ch := range row {
-			if ch == '#' {
-				g.walls[Point{X: x, Y: y}] = true
-			}
-		}
-	}
+	// Generate walls dynamically
+	g.generateWalls(level)
 
 	// Initialize snake in a safe starting position
 	g.initSnake()
@@ -225,18 +242,196 @@ func (g *Game) loadLevel() {
 	g.spawnFood()
 }
 
+// generateWalls creates the wall layout based on level and screen size.
+func (g *Game) generateWalls(level *Level) {
+	g.walls = make(map[Point]bool)
+
+	// Always add border walls
+	for x := range g.mapWidth {
+		g.walls[Point{X: x, Y: 0}] = true
+		g.walls[Point{X: x, Y: g.mapHeight - 1}] = true
+	}
+	for y := range g.mapHeight {
+		g.walls[Point{X: 0, Y: y}] = true
+		g.walls[Point{X: g.mapWidth - 1, Y: y}] = true
+	}
+
+	// Add level-specific obstacles scaled to screen size
+	g.addLevelObstacles(level.ID)
+}
+
+// addLevelObstacles adds obstacles specific to each level, scaled to screen size.
+func (g *Game) addLevelObstacles(levelID int) {
+	w := g.mapWidth
+	h := g.mapHeight
+	cx := w / 2
+	cy := h / 2
+
+	switch levelID {
+	case 1:
+		// Empty - just border walls
+
+	case 2:
+		// Central pillar
+		pillarW := max(2, w/15)
+		pillarH := max(4, h/4)
+		for dy := range pillarH {
+			for dx := range pillarW {
+				g.walls[Point{X: cx - pillarW/2 + dx, Y: cy - pillarH/2 + dy}] = true
+			}
+		}
+
+	case 3:
+		// Two pillars
+		pillarW := max(2, w/20)
+		pillarH := max(4, h/3)
+		offset := w / 4
+		for dy := range pillarH {
+			for dx := range pillarW {
+				g.walls[Point{X: cx - offset + dx, Y: cy - pillarH/2 + dy}] = true
+				g.walls[Point{X: cx + offset - pillarW + dx, Y: cy - pillarH/2 + dy}] = true
+			}
+		}
+
+	case 4:
+		// Zigzag horizontal barriers
+		barrierLen := w * 2 / 5
+		for i := range 3 {
+			y := h * (i + 1) / 4
+			if i%2 == 0 {
+				for x := 1; x < barrierLen; x++ {
+					g.walls[Point{X: x, Y: y}] = true
+				}
+			} else {
+				for x := w - barrierLen; x < w-1; x++ {
+					g.walls[Point{X: x, Y: y}] = true
+				}
+			}
+		}
+
+	case 5:
+		// Rooms with openings
+		// Vertical divider
+		openingSize := max(3, h/5)
+		for y := 1; y < h-1; y++ {
+			if y < cy-openingSize/2 || y > cy+openingSize/2 {
+				g.walls[Point{X: cx, Y: y}] = true
+			}
+		}
+		// Horizontal divider
+		for x := 1; x < w-1; x++ {
+			if x < cx-openingSize/2 || x > cx+openingSize/2 {
+				g.walls[Point{X: x, Y: cy}] = true
+			}
+		}
+
+	case 6:
+		// Four corners
+		cornerSize := min(w/6, h/4)
+		for dy := range cornerSize {
+			for dx := range cornerSize {
+				g.walls[Point{X: 1 + dx, Y: 1 + dy}] = true
+				g.walls[Point{X: w - 2 - dx, Y: 1 + dy}] = true
+				g.walls[Point{X: 1 + dx, Y: h - 2 - dy}] = true
+				g.walls[Point{X: w - 2 - dx, Y: h - 2 - dy}] = true
+			}
+		}
+
+	case 7:
+		// Cross pattern
+		armLen := min(w/4, h/3)
+		armWidth := max(1, min(w/20, h/10))
+		// Horizontal arm
+		for x := cx - armLen; x <= cx+armLen; x++ {
+			for dy := range armWidth {
+				g.walls[Point{X: x, Y: cy - armWidth/2 + dy}] = true
+			}
+		}
+		// Vertical arm
+		for y := cy - armLen; y <= cy+armLen; y++ {
+			for dx := range armWidth {
+				g.walls[Point{X: cx - armWidth/2 + dx, Y: y}] = true
+			}
+		}
+
+	case 8:
+		// Scattered obstacles
+		numObstacles := (w * h) / 150
+		obstacleSize := max(2, min(w/25, h/12))
+		for range numObstacles {
+			ox := 3 + g.rng.Intn(w-6-obstacleSize)
+			oy := 3 + g.rng.Intn(h-6-obstacleSize)
+			for dy := range obstacleSize {
+				for dx := range obstacleSize {
+					g.walls[Point{X: ox + dx, Y: oy + dy}] = true
+				}
+			}
+		}
+
+	case 9:
+		// Spiral-ish pattern
+		margin := 3
+		for layer := range 3 {
+			offset := margin + layer*4
+			if offset >= w/2-2 || offset >= h/2-2 {
+				break
+			}
+			// Top
+			for x := offset; x < w-offset; x++ {
+				g.walls[Point{X: x, Y: offset}] = true
+			}
+			// Right
+			for y := offset; y < h-offset; y++ {
+				g.walls[Point{X: w - 1 - offset, Y: y}] = true
+			}
+			// Bottom (with gap)
+			gapStart := w/2 - 2
+			gapEnd := w/2 + 2
+			for x := offset; x < w-offset; x++ {
+				if x < gapStart || x > gapEnd {
+					g.walls[Point{X: x, Y: h - 1 - offset}] = true
+				}
+			}
+			// Left (with gap)
+			gapStartY := h/2 - 2
+			gapEndY := h/2 + 2
+			for y := offset; y < h-offset; y++ {
+				if y < gapStartY || y > gapEndY {
+					g.walls[Point{X: offset, Y: y}] = true
+				}
+			}
+		}
+
+	case 10:
+		// Maze-like pattern
+		// Vertical bars with gaps
+		numBars := w / 12
+		barGap := max(3, h/6)
+		for i := 1; i < numBars; i++ {
+			x := i * w / numBars
+			gapY := g.rng.Intn(h-barGap-4) + 2
+			for y := 1; y < h-1; y++ {
+				if y < gapY || y > gapY+barGap {
+					g.walls[Point{X: x, Y: y}] = true
+				}
+			}
+		}
+	}
+}
+
 // initSnake places the snake at a safe starting position.
 func (g *Game) initSnake() {
-	// Find a good starting position (center-ish, not on walls)
-	startX := g.mapWidth / 4
+	// Find a good starting position (left side, middle height)
+	startX := g.mapWidth / 6
 	startY := g.mapHeight / 2
+	initialLen := g.cfg.Gameplay.InitialLength
 
 	// Search for a clear spot
 	for range 100 {
 		clear := true
-		for i := range 3 {
+		for i := range initialLen {
 			p := Point{X: startX + i, Y: startY}
-			if g.walls[p] || p.X < 1 || p.X >= g.mapWidth-1 || p.Y < 1 || p.Y >= g.mapHeight-1 {
+			if g.walls[p] || p.X < 2 || p.X >= g.mapWidth-2 || p.Y < 2 || p.Y >= g.mapHeight-2 {
 				clear = false
 				break
 			}
@@ -245,15 +440,14 @@ func (g *Game) initSnake() {
 			break
 		}
 		// Try another position
-		startX = 2 + g.rng.Intn(g.mapWidth/2)
-		startY = 2 + g.rng.Intn(g.mapHeight-4)
+		startX = 3 + g.rng.Intn(g.mapWidth/3)
+		startY = 3 + g.rng.Intn(g.mapHeight-6)
 	}
 
-	// Create initial snake (3 segments, head at front)
-	g.snake = []Point{
-		{X: startX + 2, Y: startY}, // Head
-		{X: startX + 1, Y: startY},
-		{X: startX, Y: startY},
+	// Create initial snake (head at front)
+	g.snake = make([]Point, initialLen)
+	for i := range initialLen {
+		g.snake[i] = Point{X: startX + (initialLen - 1 - i), Y: startY}
 	}
 	g.direction = DirRight
 	g.nextDir = DirRight
@@ -274,7 +468,6 @@ func (g *Game) spawnFood() {
 	}
 
 	if len(emptyCells) == 0 {
-		// No space for food - should not happen in normal gameplay
 		g.food = Point{X: -1, Y: -1}
 		return
 	}
@@ -432,14 +625,13 @@ func (g *Game) moveSnake() {
 // checkLevelCompletion checks if the level is complete.
 func (g *Game) checkLevelCompletion() {
 	if g.mode == ModeCampaign {
-		level := GetLevel(g.levelIndex)
-		if level != nil && g.foodEaten >= level.TargetFood {
+		if g.foodEaten >= g.cfg.Gameplay.FoodPerLevel {
 			g.levelCleared = true
 			g.levelClearTicks = 0
 		}
 	}
-	// Endless mode: transition levels after every 10 food
-	if g.mode == ModeEndless && g.foodEaten >= 10 {
+	// Endless mode: transition levels after configured food count
+	if g.mode == ModeEndless && g.foodEaten >= g.cfg.Gameplay.EndlessFoodWrap {
 		g.levelIndex++
 		g.loadLevel()
 	}
@@ -468,7 +660,7 @@ func (g *Game) Render(dst *core.Screen) {
 		return
 	}
 
-	// Draw map
+	// Draw map (walls)
 	g.renderMap(dst)
 
 	// Draw snake
@@ -503,10 +695,12 @@ func (g *Game) Render(dst *core.Screen) {
 // renderHUD draws the top status bar.
 func (g *Game) renderHUD(dst *core.Screen) {
 	var hud string
+	speed := g.cfg.Speed.InitialMoveEveryTicks - g.moveEveryTicks + 1
 	if g.mode == ModeEndless {
-		hud = fmt.Sprintf(" Snake (Endless) — Score: %d  Speed: %d", g.score, 7-g.moveEveryTicks)
+		hud = fmt.Sprintf(" Snake (Endless) - Score: %d  Level: %d  Speed: %d", g.score, g.levelIndex+1, speed)
 	} else {
-		hud = fmt.Sprintf(" Snake — Score: %d  Level: %d/%d  Food: %d", g.score, g.levelIndex+1, LevelCount(), g.foodEaten)
+		hud = fmt.Sprintf(" Snake - Score: %d  Level: %d/%d  Food: %d/%d  Speed: %d",
+			g.score, g.levelIndex+1, LevelCount(), g.foodEaten, g.cfg.Gameplay.FoodPerLevel, speed)
 	}
 
 	// Draw HUD line
@@ -625,17 +819,6 @@ func (d Direction) String() string {
 	default:
 		return "unknown"
 	}
-}
-
-// --- Helper for level names (used in UI) ---
-
-// LevelNames returns the names of all levels.
-func LevelNames() []string {
-	names := make([]string, LevelCount())
-	for i, level := range Levels {
-		names[i] = level.Name
-	}
-	return names
 }
 
 // --- Debug helper ---

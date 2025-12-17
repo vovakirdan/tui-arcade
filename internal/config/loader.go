@@ -228,3 +228,63 @@ func ApplyBreakoutPreset(cfg *BreakoutConfig, preset DifficultyPreset) {
 		cfg.Physics.BallSpeed = 400
 	}
 }
+
+// LoadSnake loads Snake configuration.
+// Search order: customPath -> ~/.arcade/configs/snake.yaml -> ./configs/snake.yaml -> embedded default
+func LoadSnake(customPath string) (SnakeConfig, error) {
+	var cfg SnakeConfig
+
+	// Try custom path first
+	if customPath != "" {
+		data, err := os.ReadFile(customPath)
+		if err != nil {
+			return cfg, fmt.Errorf("failed to read config %s: %w", customPath, err)
+		}
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return cfg, fmt.Errorf("failed to parse config %s: %w", customPath, err)
+		}
+		return cfg, nil
+	}
+
+	// Try user config directory
+	if userCfgPath := userConfigPath("snake.yaml"); userCfgPath != "" {
+		if data, err := os.ReadFile(userCfgPath); err == nil {
+			if err := yaml.Unmarshal(data, &cfg); err == nil {
+				return cfg, nil
+			}
+		}
+	}
+
+	// Try local configs directory
+	if data, err := os.ReadFile("configs/snake.yaml"); err == nil {
+		if err := yaml.Unmarshal(data, &cfg); err == nil {
+			return cfg, nil
+		}
+	}
+
+	// Use embedded default YAML
+	if err := yaml.Unmarshal(defaultSnakeYAML, &cfg); err != nil {
+		return DefaultSnakeConfig(), nil // Fallback to hardcoded if embed fails
+	}
+	return cfg, nil
+}
+
+// ApplySnakePreset modifies the config based on a difficulty preset.
+func ApplySnakePreset(cfg *SnakeConfig, preset DifficultyPreset) {
+	if preset == DifficultyFixed {
+		cfg.Difficulty.Enabled = false
+	} else {
+		cfg.Difficulty.Enabled = true
+		cfg.Difficulty.InitialLevel = InitialLevelForPreset(preset)
+	}
+
+	// Adjust gameplay based on difficulty
+	switch preset {
+	case DifficultyEasy:
+		cfg.Speed.InitialMoveEveryTicks = 12 // Slower
+		cfg.Gameplay.FoodPerLevel = 3
+	case DifficultyHard:
+		cfg.Speed.InitialMoveEveryTicks = 5 // Faster
+		cfg.Gameplay.FoodPerLevel = 8
+	}
+}

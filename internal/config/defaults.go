@@ -16,6 +16,9 @@ var defaultPongYAML []byte
 //go:embed defaults/breakout.yaml
 var defaultBreakoutYAML []byte
 
+//go:embed defaults/snake.yaml
+var defaultSnakeYAML []byte
+
 // DefaultFlappyConfig returns the default Flappy Bird configuration.
 func DefaultFlappyConfig() FlappyConfig {
 	return FlappyConfig{
@@ -164,6 +167,35 @@ func DefaultBreakoutConfig() BreakoutConfig {
 	}
 }
 
+// DefaultSnakeConfig returns the default Snake configuration.
+func DefaultSnakeConfig() SnakeConfig {
+	return SnakeConfig{
+		Speed: SnakeSpeed{
+			InitialMoveEveryTicks: 8, // Move every 8 ticks (~7.5 moves/sec at 60fps)
+			MinMoveEveryTicks:     2, // Fastest: every 2 ticks
+			SpeedUpPerLevel:       1, // Speed up by 1 tick per level
+		},
+		Gameplay: SnakeGameplay{
+			FoodPerLevel:    5,  // 5 food to complete a level
+			InitialLength:   3,  // Start with 3 segments
+			EndlessFoodWrap: 10, // Change level every 10 food in endless
+		},
+		Difficulty: DifficultyConfig{
+			Enabled:      true,
+			InitialLevel: 0.0,
+			Progression: ProgressionConfig{
+				Type:  "score",
+				MaxAt: 100,
+			},
+			Scaling: ScalingConfig{
+				SpeedMultiplier:  0.5,
+				GapReduction:     0,
+				SpacingReduction: 0,
+			},
+		},
+	}
+}
+
 // GetDefaultYAML returns the embedded default YAML for a game.
 func GetDefaultYAML(gameID string) []byte {
 	switch gameID {
@@ -175,6 +207,8 @@ func GetDefaultYAML(gameID string) []byte {
 		return defaultPongYAML
 	case "breakout":
 		return defaultBreakoutYAML
+	case "snake":
+		return defaultSnakeYAML
 	default:
 		return nil
 	}

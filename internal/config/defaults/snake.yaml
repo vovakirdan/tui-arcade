@@ -1,0 +1,23 @@
+# Snake game configuration
+# Speed is controlled by "move_every_ticks" - higher = slower
+
+speed:
+  initial_move_every_ticks: 8  # Ticks between moves (8 = ~7.5 moves/sec at 60fps)
+  min_move_every_ticks: 2      # Fastest speed (every 2 ticks = 30 moves/sec)
+  speed_up_per_level: 1        # Reduce ticks by 1 per level
+
+gameplay:
+  food_per_level: 5            # Food needed to complete a level
+  initial_length: 3            # Starting snake length
+  endless_food_wrap: 10        # Food count before level change in endless mode
+
+difficulty:
+  enabled: true
+  initial_level: 0.0           # 0.0 = easiest starting speed
+  progression:
+    type: "score"              # Difficulty increases with score
+    max_at: 100                # Max difficulty at score 100
+  scaling:
+    speed_multiplier: 0.5      # Speed increase at max difficulty
+    gap_reduction: 0
+    spacing_reduction: 0

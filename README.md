@@ -4,7 +4,7 @@ A terminal-based arcade gaming platform built with Go and Bubble Tea. Play class
 
 ## Features
 
-- **Classic Games**: Flappy Bird, Dino Runner, Breakout, and Pong
+- **Classic Games**: Flappy Bird, Dino Runner, Breakout, Snake, and Pong
 - **SSH Server**: Host an arcade server for remote players
 - **Online Multiplayer**: Play Pong against other players over SSH
 - **Fixed FPS Simulation**: Deterministic game logic at configurable tick rates
@@ -112,6 +112,14 @@ When connected to the SSH server:
 | P | Pause |
 | R | Restart (after game over) |
 
+### Snake
+
+| Key | Action |
+|-----|--------|
+| Arrow Keys / WASD | Change direction |
+| P | Pause |
+| R | Restart (after game over) |
+
 ## Available Games
 
 ### Flappy Bird
@@ -166,6 +174,34 @@ Power-ups drop from destroyed bricks (18% chance):
 9. Castle - Castle with solid turrets
 10. Final Boss - Hard brick fortress
 
+### Snake
+Classic snake game - collect food to grow, avoid walls and yourself!
+
+**Game Modes:**
+- **Campaign**: Play through 10 unique levels with different layouts
+- **Endless**: Cycle through levels forever with increasing speed
+- **Level Select**: Start from any level in campaign mode
+
+**Symbols:**
+| Symbol | Description |
+|--------|-------------|
+| `O` | Snake head |
+| `o` | Snake body |
+| `*` | Food |
+| `#` | Wall/obstacle |
+
+**Levels:**
+1. Empty Box - Open arena
+2. Central Pillar - Obstacle in the center
+3. Two Pillars - Two vertical obstacles
+4. Zigzag - Horizontal barriers
+5. Rooms - Divided spaces with openings
+6. Four Corners - Corner obstacles
+7. Cross - Cross-shaped barriers
+8. Scattered - Multiple small obstacles
+9. Spiral - Spiral pattern walls
+10. Final Maze - Complex maze layout
+
 ## Architecture
 
 The platform follows a clean SDK architecture:
@@ -185,6 +221,7 @@ internal/
     flappy/       # Flappy Bird implementation
     dino/         # Dino Runner implementation
     breakout/     # Breakout implementation (10 levels, power-ups)
+    snake/        # Snake implementation (10 levels, campaign & endless)
     pong/         # Pong implementation (CPU & Online modes)
 ```
 
@@ -409,6 +446,40 @@ Configuration files can be placed in `~/.arcade/` or `./configs/`:
                                            │                                          
                                                                                       
                                            │                                          
+```
+
+### Snake
+
+```bash
+ Snake (Endless) - Score: 2  Level: 1  Speed: 1
+──────────────────────────────────────────────────────────────────────────────────────
+######################################################################################
+#                                                                                    #
+#                 ooooO                                  *                           #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+#                                                                                    #
+######################################################################################
 ```
 
 ## License

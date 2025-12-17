@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -71,6 +74,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		m.quitting = true
 		return m, tea.Quit
+	case "ctrl+s":
+		m.saveScreenshot()
+		return m, nil
 	}
 
 	// Map key to action
@@ -137,6 +143,26 @@ func (m Model) handleTick() (tea.Model, tea.Cmd) {
 
 	// Continue ticking
 	return m, tickCmd(m.config.TickRate)
+}
+
+// saveScreenshot saves the current screen to a file.
+func (m *Model) saveScreenshot() {
+	// Render current state
+	m.game.Render(m.screen)
+
+	// Create screenshots directory
+	dir := filepath.Join(os.Getenv("HOME"), ".arcade", "screenshots")
+	//nolint:errcheck // Best-effort directory creation
+	os.MkdirAll(dir, 0o755)
+
+	// Generate filename with timestamp
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("%s_%s.txt", m.game.ID(), timestamp)
+	path := filepath.Join(dir, filename)
+
+	// Save screenshot
+	//nolint:errcheck // Best-effort save, game continues regardless
+	os.WriteFile(path, []byte(m.screen.String()), 0o600)
 }
 
 // View renders the current state to a string for display.

@@ -530,6 +530,12 @@ func (m SessionModel) handleOnlineGameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	// Screenshot
+	if key == "ctrl+s" {
+		m.saveOnlineScreenshot()
+		return m, nil
+	}
+
 	// Back to menu (Esc)
 	if key == "esc" {
 		// Send leave match message
@@ -611,6 +617,24 @@ func (m SessionModel) viewOnlineGame() string {
 	return b.String()
 }
 
+// saveOnlineScreenshot saves a screenshot of the online game view.
+func (m *SessionModel) saveOnlineScreenshot() {
+	// Create screenshots directory
+	dir := filepath.Join(os.Getenv("HOME"), ".arcade", "screenshots")
+	//nolint:errcheck // Best-effort directory creation
+	os.MkdirAll(dir, 0o755)
+
+	// Generate filename with timestamp
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("online_%s_%s.txt", m.username, timestamp)
+	path := filepath.Join(dir, filename)
+
+	// Get current view and save it
+	content := m.viewOnlineGame()
+	//nolint:errcheck // Best-effort save
+	os.WriteFile(path, []byte(content), 0o600)
+}
+
 // GameModel wraps a game with multiplayer support and back-to-menu capability.
 type GameModel struct {
 	game       registry.Game
@@ -670,6 +694,12 @@ func (m GameModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKey processes keyboard input.
 func (m GameModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Check for screenshot
+	if msg.String() == "ctrl+s" {
+		m.saveScreenshot()
+		return m, nil
+	}
+
 	// Check for quit
 	if m.keyMapper.MapKeyToMultiFrame(msg, &m.inputFrame) {
 		m.quitting = true
@@ -736,4 +766,24 @@ func (m GameModel) IsQuitting() bool {
 // BackToMenu returns true if user requested to go back to menu.
 func (m GameModel) BackToMenu() bool {
 	return m.backToMenu
+}
+
+// saveScreenshot saves the current screen to a file.
+func (m *GameModel) saveScreenshot() {
+	// Render current state
+	m.game.Render(m.screen)
+
+	// Create screenshots directory
+	dir := filepath.Join(os.Getenv("HOME"), ".arcade", "screenshots")
+	//nolint:errcheck // Best-effort directory creation
+	os.MkdirAll(dir, 0o755)
+
+	// Generate filename with timestamp
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("%s_%s.txt", m.game.ID(), timestamp)
+	path := filepath.Join(dir, filename)
+
+	// Save screenshot
+	//nolint:errcheck // Best-effort save
+	os.WriteFile(path, []byte(m.screen.String()), 0o600)
 }

@@ -200,3 +200,140 @@ func MaxTile(board Board) int {
 func IsGameOver(board Board) bool {
 	return !CanMove(board)
 }
+
+// SlideWithTracking performs a move and returns tile movement tracking for animation.
+func SlideWithTracking(board Board, dir Direction) (newBoard Board, moves []TileMove, score int, changed bool) {
+	switch dir {
+	case DirLeft:
+		return slideLeftWithTracking(board)
+	case DirRight:
+		return slideRightWithTracking(board)
+	case DirUp:
+		return slideUpWithTracking(board)
+	case DirDown:
+		return slideDownWithTracking(board)
+	default:
+		return board, nil, 0, false
+	}
+}
+
+// slideRowWithTracking slides a row left and returns move tracking.
+func slideRowWithTracking(row [BoardSize]int, y int) (result [BoardSize]int, moves []TileMove, score int) {
+	writePos := 0
+
+	for x := range BoardSize {
+		if row[x] == 0 {
+			continue
+		}
+
+		if writePos > 0 && result[writePos-1] == row[x] {
+			// Merge with previous tile
+			result[writePos-1] *= 2
+			score += result[writePos-1]
+			moves = append(moves, TileMove{
+				FromX:  x,
+				FromY:  y,
+				ToX:    writePos - 1,
+				ToY:    y,
+				Value:  row[x],
+				Merged: true,
+			})
+		} else {
+			// Move tile
+			if x != writePos {
+				moves = append(moves, TileMove{
+					FromX:  x,
+					FromY:  y,
+					ToX:    writePos,
+					ToY:    y,
+					Value:  row[x],
+					Merged: false,
+				})
+			}
+			result[writePos] = row[x]
+			writePos++
+		}
+	}
+
+	return result, moves, score
+}
+
+// slideLeftWithTracking slides all tiles left with tracking.
+func slideLeftWithTracking(board Board) (Board, []TileMove, int, bool) {
+	var newBoard Board
+	var allMoves []TileMove
+	totalScore := 0
+	changed := false
+
+	for y := range BoardSize {
+		newRow, rowMoves, score := slideRowWithTracking(board[y], y)
+		newBoard[y] = newRow
+		allMoves = append(allMoves, rowMoves...)
+		totalScore += score
+
+		if board[y] != newRow {
+			changed = true
+		}
+	}
+
+	return newBoard, allMoves, totalScore, changed
+}
+
+// slideRightWithTracking slides all tiles right with tracking.
+func slideRightWithTracking(board Board) (Board, []TileMove, int, bool) {
+	var newBoard Board
+	var allMoves []TileMove
+	totalScore := 0
+	changed := false
+
+	for y := range BoardSize {
+		// Reverse row, slide left, reverse back
+		reversed := reverseRow(board[y])
+		slidRow, rowMoves, score := slideRowWithTracking(reversed, y)
+		newBoard[y] = reverseRow(slidRow)
+		totalScore += score
+
+		// Fix move coordinates (mirror X positions)
+		for i := range rowMoves {
+			rowMoves[i].FromX = BoardSize - 1 - rowMoves[i].FromX
+			rowMoves[i].ToX = BoardSize - 1 - rowMoves[i].ToX
+		}
+		allMoves = append(allMoves, rowMoves...)
+
+		if board[y] != newBoard[y] {
+			changed = true
+		}
+	}
+
+	return newBoard, allMoves, totalScore, changed
+}
+
+// slideUpWithTracking slides all tiles up with tracking.
+func slideUpWithTracking(board Board) (Board, []TileMove, int, bool) {
+	// Transpose, slide left, transpose back
+	transposed := transpose(board)
+	slidBoard, moves, score, changed := slideLeftWithTracking(transposed)
+
+	// Fix move coordinates (swap X/Y)
+	for i := range moves {
+		moves[i].FromX, moves[i].FromY = moves[i].FromY, moves[i].FromX
+		moves[i].ToX, moves[i].ToY = moves[i].ToY, moves[i].ToX
+	}
+
+	return transpose(slidBoard), moves, score, changed
+}
+
+// slideDownWithTracking slides all tiles down with tracking.
+func slideDownWithTracking(board Board) (Board, []TileMove, int, bool) {
+	// Transpose, slide right, transpose back
+	transposed := transpose(board)
+	slidBoard, moves, score, changed := slideRightWithTracking(transposed)
+
+	// Fix move coordinates (swap X/Y)
+	for i := range moves {
+		moves[i].FromX, moves[i].FromY = moves[i].FromY, moves[i].FromX
+		moves[i].ToX, moves[i].ToY = moves[i].ToY, moves[i].ToX
+	}
+
+	return transpose(slidBoard), moves, score, changed
+}

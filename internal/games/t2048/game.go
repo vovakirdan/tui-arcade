@@ -15,6 +15,13 @@ const (
 	ModeEndless  Mode = "endless"
 )
 
+// Layout constants
+const (
+	hudHeight     = 4 // HUD lines at top
+	minCellWidth  = 6 // Minimum cell width for "65536"
+	minCellHeight = 3 // Minimum cell height for readability
+)
+
 // Game implements the 2048 puzzle game.
 type Game struct {
 	mode Mode
@@ -30,6 +37,17 @@ type Game struct {
 	// Screen dimensions
 	screenW int
 	screenH int
+
+	// Dynamic cell sizing
+	cellWidth  int
+	cellHeight int
+
+	// Animation state
+	animations     []TileAnimation
+	animating      bool
+	animationPhase AnimationPhase
+	animationTicks int
+	pendingNewTile *PendingTile
 
 	// Game state flags
 	gameOver        bool
@@ -109,6 +127,13 @@ func (g *Game) Reset(cfg core.RuntimeConfig) {
 	g.moveProcessed = false
 	g.levelClearTicks = 0
 
+	// Clear animation state
+	g.animations = nil
+	g.animating = false
+	g.animationPhase = PhaseNone
+	g.animationTicks = 0
+	g.pendingNewTile = nil
+
 	// Clear board
 	g.board = Board{}
 
@@ -123,12 +148,12 @@ func (g *Game) Reset(cfg core.RuntimeConfig) {
 	// Set up level
 	g.loadLevel()
 
-	// Spawn initial tiles (2 tiles)
-	g.spawnTile()
-	g.spawnTile()
-
-	// Check screen size
+	// Check screen size (calculates cell sizes)
 	g.checkScreenSize()
+
+	// Spawn initial tiles (2 tiles) - no animation for initial spawn
+	g.spawnTile()
+	g.spawnTile()
 }
 
 // loadLevel sets up the current level parameters.
@@ -168,12 +193,49 @@ func (g *Game) spawnTile() {
 	g.board[cell.Y][cell.X] = value
 }
 
-// checkScreenSize checks if the screen is large enough.
+// checkScreenSize checks if the screen is large enough and calculates cell sizes.
 func (g *Game) checkScreenSize() {
-	// Minimum size: board (21 wide, 9 tall) + HUD (2 lines)
-	minW := 25
-	minH := 12
+	// Minimum size for the smallest possible board
+	minW := minCellWidth*BoardSize + 2 // +2 for borders
+	minH := minCellHeight*BoardSize + hudHeight + 2
+
 	g.tooSmall = g.screenW < minW || g.screenH < minH
+	if g.tooSmall {
+		return
+	}
+
+	// Calculate dynamic cell sizes
+	g.calculateCellSize()
+}
+
+// calculateCellSize determines cell dimensions to fill the terminal as a square.
+// Terminal characters have ~2:1 aspect ratio, so cellWidth = 2 * cellHeight for visual squareness.
+func (g *Game) calculateCellSize() {
+	// Available space
+	availH := g.screenH - hudHeight - 2 // -2 for borders
+	availW := g.screenW - 2             // -2 for borders
+
+	// Maximum cell height based on available space
+	maxCellH := availH / BoardSize
+	// For visual squareness: cellWidth ≈ 2 * cellHeight
+	maxCellW := maxCellH * 2
+
+	// Constrain by available width
+	if maxCellW*BoardSize > availW {
+		maxCellW = availW / BoardSize
+		maxCellH = maxCellW / 2
+	}
+
+	// Apply minimums
+	g.cellWidth = maxCellW
+	if g.cellWidth < minCellWidth {
+		g.cellWidth = minCellWidth
+	}
+
+	g.cellHeight = maxCellH
+	if g.cellHeight < minCellHeight {
+		g.cellHeight = minCellHeight
+	}
 }
 
 // Step advances the game by one tick.
@@ -216,6 +278,13 @@ func (g *Game) Step(in core.InputFrame) core.StepResult {
 		return core.StepResult{State: g.State()}
 	}
 
+	// Update animation if in progress
+	if g.animating {
+		g.updateAnimation()
+		// Don't process input during animation
+		return core.StepResult{State: g.State()}
+	}
+
 	// Process move input
 	var dir Direction
 	moved := false
@@ -245,7 +314,7 @@ func (g *Game) Step(in core.InputFrame) core.StepResult {
 
 // processMove handles a move in the given direction.
 func (g *Game) processMove(dir Direction) {
-	newBoard, scoreGained, changed := Slide(g.board, dir)
+	newBoard, moves, scoreGained, changed := SlideWithTracking(g.board, dir)
 
 	if !changed {
 		// Board didn't change - don't spawn new tile
@@ -264,13 +333,49 @@ func (g *Game) processMove(dir Direction) {
 		}
 	}
 
-	// Spawn new tile
-	g.spawnTile()
+	// Determine new tile position and value
+	newTileX, newTileY, newTileValue := g.determineNewTile()
 
-	// Check for game over
+	// Start slide animation if there are moves
+	if len(moves) > 0 {
+		g.startSlideAnimation(moves)
+		// Store pending new tile to spawn after slide animation
+		if newTileX >= 0 {
+			g.pendingNewTile = &PendingTile{X: newTileX, Y: newTileY, Value: newTileValue}
+		}
+	} else if newTileX >= 0 {
+		// No moves to animate, just spawn new tile with pop animation
+		g.board[newTileY][newTileX] = newTileValue
+		g.startPopAnimation(newTileX, newTileY, newTileValue)
+	}
+
+	// Check for game over (after tile spawn)
+	if newTileX >= 0 {
+		g.board[newTileY][newTileX] = newTileValue
+	}
 	if IsGameOver(g.board) {
 		g.gameOver = true
 	}
+}
+
+// determineNewTile picks a random empty cell and value for the new tile.
+// Returns (-1, -1, 0) if no empty cells.
+func (g *Game) determineNewTile() (x, y, value int) {
+	emptyCells := EmptyCells(g.board)
+	if len(emptyCells) == 0 {
+		return -1, -1, 0
+	}
+
+	// Pick random empty cell
+	cell := emptyCells[g.rng.Intn(len(emptyCells))]
+
+	// Determine value (90% 2, 10% 4 by default)
+	value = 2
+	if g.rng.Float64() < g.spawn4Prob {
+		value = 4
+	}
+
+	return cell.X, cell.Y, value
 }
 
 // advanceLevel moves to the next level.

@@ -212,7 +212,8 @@ func (m OnlineLobbyModel) handleJoinCodeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	key := msg.String()
 
 	switch key {
-	case "esc", "b":
+	case "esc":
+		// Only Esc goes back - 'b' is a valid code character
 		m.backToMenu = true
 		return m, nil
 	case "enter":
@@ -243,10 +244,7 @@ func (m OnlineLobbyModel) handleJoinCodeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 }
 
 func (m OnlineLobbyModel) handleJoinWaitingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
-
-	switch key {
-	case "esc", "b":
+	if msg.String() == "esc" {
 		// Leave lobby attempt
 		m.coordinator.Send(multiplayer.LeaveLobbyMsg{
 			SessionID: m.sessionID,

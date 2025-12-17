@@ -71,10 +71,10 @@ type DinoPlayer struct {
 
 // DifficultyConfig defines the difficulty progression system.
 type DifficultyConfig struct {
-	Enabled     bool              `yaml:"enabled"`
-	InitialLevel float64          `yaml:"initial_level"` // 0.0 = easy, 1.0 = hard
-	Progression ProgressionConfig `yaml:"progression"`
-	Scaling     ScalingConfig     `yaml:"scaling"`
+	Enabled      bool              `yaml:"enabled"`
+	InitialLevel float64           `yaml:"initial_level"` // 0.0 = easy, 1.0 = hard
+	Progression  ProgressionConfig `yaml:"progression"`
+	Scaling      ScalingConfig     `yaml:"scaling"`
 }
 
 // ProgressionConfig defines how difficulty increases over time.

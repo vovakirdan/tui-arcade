@@ -72,7 +72,7 @@ func (pm *PipeManager) UpdateScreenSize(screenW, screenH int) {
 
 // Update moves pipes left and spawns new ones as needed.
 // Returns the number of pipes that were passed this frame (for scoring).
-func (pm *PipeManager) Update(playerX int, score int, ticks int) int {
+func (pm *PipeManager) Update(playerX, score, ticks int) int {
 	passed := 0
 
 	// Calculate current speed based on difficulty
@@ -118,7 +118,7 @@ func (pm *PipeManager) Update(playerX int, score int, ticks int) int {
 }
 
 // spawnPipe creates a new pipe at the right edge of the screen.
-func (pm *PipeManager) spawnPipe(score int, ticks int) {
+func (pm *PipeManager) spawnPipe(score, ticks int) {
 	// Calculate gap size based on difficulty
 	maxGap := pm.cfg.Obstacles.MaxGapSize
 	currentGap := pm.difficulty.GapSize(maxGap, score, ticks)

@@ -59,8 +59,8 @@ func (s *Screen) Resize(width, height int) {
 	// Copy old content
 	copyW := Min(oldW, width)
 	copyH := Min(oldH, height)
-	for y := 0; y < copyH; y++ {
-		for x := 0; x < copyW; x++ {
+	for y := range copyH {
+		for x := range copyW {
 			s.cells[y][x] = oldCells[y][x]
 		}
 	}
@@ -148,14 +148,14 @@ func (s *Screen) DrawBox(r Rect) {
 
 // DrawHLine draws a horizontal line from (x, y) with the given length.
 func (s *Screen) DrawHLine(x, y, length int, r rune) {
-	for i := 0; i < length; i++ {
+	for i := range length {
 		s.Set(x+i, y, r)
 	}
 }
 
 // DrawVLine draws a vertical line from (x, y) with the given length.
 func (s *Screen) DrawVLine(x, y, length int, r rune) {
-	for i := 0; i < length; i++ {
+	for i := range length {
 		s.Set(x, y+i, r)
 	}
 }
@@ -166,11 +166,11 @@ func (s *Screen) String() string {
 	var sb strings.Builder
 	sb.Grow(s.width*s.height + s.height) // Pre-allocate for efficiency
 
-	for y := 0; y < s.height; y++ {
+	for y := range s.height {
 		if y > 0 {
 			sb.WriteRune('\n')
 		}
-		for x := 0; x < s.width; x++ {
+		for x := range s.width {
 			sb.WriteRune(s.cells[y][x])
 		}
 	}

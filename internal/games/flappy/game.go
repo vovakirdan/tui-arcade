@@ -189,8 +189,8 @@ func (g *Game) Render(dst *core.Screen) {
 
 	// Draw player
 	playerY := int(g.playerY)
-	for dy := 0; dy < g.cfg.Player.Height; dy++ {
-		for dx := 0; dx < g.cfg.Player.Width; dx++ {
+	for dy := range g.cfg.Player.Height {
+		for dx := range g.cfg.Player.Width {
 			if dx == g.cfg.Player.Width-1 && dy == 0 {
 				dst.Set(g.cfg.Player.X+dx, playerY+dy, PlayerChar)
 			} else {
@@ -225,14 +225,14 @@ func (g *Game) drawPipe(dst *core.Screen, p Pipe) {
 	pipeWidth := g.cfg.Obstacles.PipeWidth
 
 	// Draw top section (from top of screen to gap)
-	for y := 0; y < p.GapY; y++ {
-		for x := 0; x < pipeWidth; x++ {
+	for y := range p.GapY {
+		for x := range pipeWidth {
 			dst.Set(p.X+x, y, PipeChar)
 		}
 	}
 	// Cap on top section (at bottom of top section)
 	if p.GapY > 0 {
-		for x := 0; x < pipeWidth; x++ {
+		for x := range pipeWidth {
 			dst.Set(p.X+x, p.GapY-1, PipeCapTop)
 		}
 	}
@@ -240,13 +240,13 @@ func (g *Game) drawPipe(dst *core.Screen, p Pipe) {
 	// Draw bottom section (from below gap to ground)
 	bottomY := p.GapY + p.GapHeight
 	for y := bottomY; y < screenH; y++ {
-		for x := 0; x < pipeWidth; x++ {
+		for x := range pipeWidth {
 			dst.Set(p.X+x, y, PipeChar)
 		}
 	}
 	// Cap on bottom section (at top of bottom section)
 	if bottomY < screenH {
-		for x := 0; x < pipeWidth; x++ {
+		for x := range pipeWidth {
 			dst.Set(p.X+x, bottomY, PipeCapBottom)
 		}
 	}

@@ -22,15 +22,15 @@ const (
 
 // Game implements the Dino Runner game logic.
 type Game struct {
-	playerY    float64           // Player vertical position (relative to ground, negative = up)
-	playerVel  float64           // Player vertical velocity
-	isGrounded bool              // Whether player is on the ground
-	obstacles  *ObstacleManager  // Obstacle manager
-	score      int               // Current score (distance traveled)
-	gameOver   bool              // Whether game has ended
-	paused     bool              // Whether game is paused
+	playerY    float64            // Player vertical position (relative to ground, negative = up)
+	playerVel  float64            // Player vertical velocity
+	isGrounded bool               // Whether player is on the ground
+	obstacles  *ObstacleManager   // Obstacle manager
+	score      int                // Current score (distance traveled)
+	gameOver   bool               // Whether game has ended
+	paused     bool               // Whether game is paused
 	runtime    core.RuntimeConfig // Runtime config (screen size, tick rate)
-	cfg        config.DinoConfig // Game-specific config
+	cfg        config.DinoConfig  // Game-specific config
 	difficulty *config.DifficultyManager
 	tickCount  int // Number of ticks since start
 	groundY    int // Y position of ground line
@@ -257,8 +257,8 @@ func (g *Game) drawDino(dst *core.Screen) {
 
 // drawCactus renders a single cactus obstacle.
 func (g *Game) drawCactus(dst *core.Screen, c Cactus) {
-	for dy := 0; dy < c.Height; dy++ {
-		for dx := 0; dx < c.Width; dx++ {
+	for dy := range c.Height {
+		for dx := range c.Width {
 			y := g.groundY - c.Height + dy
 			dst.Set(c.X+dx, y, CactusChar)
 		}

@@ -48,10 +48,12 @@ linters-settings:
     enable-all: true
     disable:
       - fieldalignment  # слишком строгая проверка
+      - unusedwrite     # ложные срабатывания в Init Bubble Tea
   
   gosec:
     excludes:
       - G104  # дублирует errcheck
+      - G404  # math/rand используется для детерминированного RNG в играх
   
   gocritic:
     enabled-tags:
@@ -61,6 +63,7 @@ linters-settings:
     disabled-checks:
       - commentFormatting
       - whyNoLint
+      - hugeParam  # Bubble Tea Model требует value receiver
   
   revive:
     rules:
@@ -78,6 +81,7 @@ issues:
         - errcheck
         - gosec
         - gocritic
+        - intrange
     
     # Исключения для сгенерированного кода
     - path: \.pb\.go$

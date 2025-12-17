@@ -42,7 +42,7 @@ func NewModel(game registry.Game, store *storage.Store, cfg core.RuntimeConfig) 
 func (m Model) Init() tea.Cmd {
 	// Initialize the game
 	m.game.Reset(m.config)
-	m.gameState = m.game.State()
+	// Note: gameState will be set on first tick (value receiver limitation)
 
 	// Start the tick loop
 	return tickCmd(m.config.TickRate)
@@ -126,6 +126,7 @@ func (m Model) handleTick() (tea.Model, tea.Cmd) {
 	// Save score on game over (once)
 	if m.gameState.GameOver && !m.scoreSaved && m.gameState.Score > 0 {
 		if m.store != nil {
+			//nolint:errcheck // Best-effort save, game continues regardless
 			m.store.SaveScore(m.game.ID(), m.gameState.Score)
 		}
 		m.scoreSaved = true

@@ -43,28 +43,28 @@ func (r Rect) Contains(x, y int) bool {
 }
 
 // Center returns the center point of the rectangle.
-func (r Rect) Center() (int, int) {
+func (r Rect) Center() (cx, cy int) {
 	return r.X + r.W/2, r.Y + r.H/2
 }
 
-// Clamp restricts a value to be within [min, max].
-func Clamp(val, min, max int) int {
-	if val < min {
-		return min
+// Clamp restricts a value to be within [minVal, maxVal].
+func Clamp(val, minVal, maxVal int) int {
+	if val < minVal {
+		return minVal
 	}
-	if val > max {
-		return max
+	if val > maxVal {
+		return maxVal
 	}
 	return val
 }
 
-// ClampF restricts a float64 value to be within [min, max].
-func ClampF(val, min, max float64) float64 {
-	if val < min {
-		return min
+// ClampF restricts a float64 value to be within [minVal, maxVal].
+func ClampF(val, minVal, maxVal float64) float64 {
+	if val < minVal {
+		return minVal
 	}
-	if val > max {
-		return max
+	if val > maxVal {
+		return maxVal
 	}
 	return val
 }

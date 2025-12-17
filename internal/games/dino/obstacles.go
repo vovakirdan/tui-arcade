@@ -61,7 +61,7 @@ func (om *ObstacleManager) UpdateScreenSize(screenW int) {
 }
 
 // Update moves obstacles left and spawns new ones as needed.
-func (om *ObstacleManager) Update(score int, ticks int) {
+func (om *ObstacleManager) Update(score, ticks int) {
 	// Calculate current speed based on difficulty
 	speed := om.difficulty.Speed(om.cfg.Physics.BaseSpeed, score, ticks)
 	speedInt := int(speed)
@@ -93,7 +93,7 @@ func (om *ObstacleManager) Update(score int, ticks int) {
 }
 
 // spawnCactus creates a new cactus at the spawn position.
-func (om *ObstacleManager) spawnCactus(score int, ticks int) {
+func (om *ObstacleManager) spawnCactus(score, ticks int) {
 	minW := om.cfg.Obstacles.MinWidth
 	maxW := om.cfg.Obstacles.MaxWidth
 	minH := om.cfg.Obstacles.MinHeight

@@ -29,7 +29,7 @@ type ScoreEntry struct {
 // It creates the parent directories if needed and runs migrations.
 func Open(dbPath string) (*Store, error) {
 	// Expand ~ to home directory
-	if len(dbPath) > 0 && dbPath[0] == '~' {
+	if dbPath != "" && dbPath[0] == '~' {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("storage: cannot expand home directory: %w", err)
@@ -39,7 +39,7 @@ func Open(dbPath string) (*Store, error) {
 
 	// Create parent directories
 	dir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("storage: cannot create directory %s: %w", dir, err)
 	}
 
@@ -143,7 +143,9 @@ func (s *Store) TopScores(gameID string, limit int) ([]ScoreEntry, error) {
 		case time.Time:
 			e.CreatedAt = v
 		case string:
-			e.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", v)
+			if parsed, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
+				e.CreatedAt = parsed
+			}
 		}
 		entries = append(entries, e)
 	}
@@ -182,7 +184,9 @@ func (s *Store) AllScores(gameID string) ([]ScoreEntry, error) {
 		case time.Time:
 			e.CreatedAt = v
 		case string:
-			e.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", v)
+			if parsed, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
+				e.CreatedAt = parsed
+			}
 		}
 		entries = append(entries, e)
 	}

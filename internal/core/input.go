@@ -5,12 +5,12 @@ package core
 type Action int
 
 const (
-	ActionNone Action = iota
-	ActionJump        // Space, Up arrow - primary action (jump, flap)
-	ActionDuck        // Down arrow - secondary action (duck, dive) - for future use
-	ActionRestart     // R key - restart game after game over
-	ActionQuit        // Q, Ctrl+C - exit game
-	ActionPause       // P, Escape - pause/unpause game
+	ActionNone    Action = iota
+	ActionJump           // Space, Up arrow - primary action (jump, flap)
+	ActionDuck           // Down arrow - secondary action (duck, dive) - for future use
+	ActionRestart        // R key - restart game after game over
+	ActionQuit           // Q, Ctrl+C - exit game
+	ActionPause          // P, Escape - pause/unpause game
 )
 
 // String returns a human-readable name for the action.

@@ -32,7 +32,7 @@ func (d *DifficultyManager) IsEnabled() bool {
 }
 
 // Level returns the current difficulty level (0.0 to 1.0) based on score/ticks.
-func (d *DifficultyManager) Level(score int, ticks int) float64 {
+func (d *DifficultyManager) Level(score, ticks int) float64 {
 	if !d.cfg.Enabled || d.cfg.Progression.Type == "none" {
 		return d.initialLevel
 	}
@@ -60,14 +60,14 @@ func (d *DifficultyManager) Level(score int, ticks int) float64 {
 }
 
 // Speed returns the current speed multiplier based on difficulty level.
-func (d *DifficultyManager) Speed(baseSpeed float64, score int, ticks int) float64 {
+func (d *DifficultyManager) Speed(baseSpeed float64, score, ticks int) float64 {
 	level := d.Level(score, ticks)
 	// Speed increases from base to base * (1 + speedMultiplier)
 	return baseSpeed * (1.0 + level*d.cfg.Scaling.SpeedMultiplier)
 }
 
 // GapSize returns the current gap size based on difficulty level.
-func (d *DifficultyManager) GapSize(baseGap int, score int, ticks int) int {
+func (d *DifficultyManager) GapSize(baseGap, score, ticks int) int {
 	level := d.Level(score, ticks)
 	// Gap decreases as difficulty increases
 	reduction := int(level * float64(d.cfg.Scaling.GapReduction))
@@ -79,7 +79,7 @@ func (d *DifficultyManager) GapSize(baseGap int, score int, ticks int) int {
 }
 
 // Spacing returns the current obstacle spacing based on difficulty level.
-func (d *DifficultyManager) Spacing(baseSpacing int, score int, ticks int) int {
+func (d *DifficultyManager) Spacing(baseSpacing, score, ticks int) int {
 	level := d.Level(score, ticks)
 	// Spacing decreases as difficulty increases
 	reduction := int(level * float64(d.cfg.Scaling.SpacingReduction))
@@ -90,7 +90,7 @@ func (d *DifficultyManager) Spacing(baseSpacing int, score int, ticks int) int {
 	return result
 }
 
-// clampF restricts a float64 to [min, max].
-func clampF(val, min, max float64) float64 {
-	return math.Max(min, math.Min(max, val))
+// clampF restricts a float64 to [minVal, maxVal].
+func clampF(val, minVal, maxVal float64) float64 {
+	return math.Max(minVal, math.Min(maxVal, val))
 }

@@ -133,13 +133,18 @@ func (s *Store) TopScores(gameID string, limit int) ([]ScoreEntry, error) {
 	var entries []ScoreEntry
 	for rows.Next() {
 		var e ScoreEntry
-		var createdAt string
+		var createdAt any
 		if err := rows.Scan(&e.ID, &e.GameID, &e.Score, &createdAt); err != nil {
 			return nil, fmt.Errorf("storage: cannot scan row: %w", err)
 		}
 
-		// Parse the datetime string
-		e.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		// Parse the datetime - handle both time.Time and string
+		switch v := createdAt.(type) {
+		case time.Time:
+			e.CreatedAt = v
+		case string:
+			e.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", v)
+		}
 		entries = append(entries, e)
 	}
 
@@ -167,12 +172,18 @@ func (s *Store) AllScores(gameID string) ([]ScoreEntry, error) {
 	var entries []ScoreEntry
 	for rows.Next() {
 		var e ScoreEntry
-		var createdAt string
+		var createdAt any
 		if err := rows.Scan(&e.ID, &e.GameID, &e.Score, &createdAt); err != nil {
 			return nil, fmt.Errorf("storage: cannot scan row: %w", err)
 		}
 
-		e.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		// Parse the datetime - handle both time.Time and string
+		switch v := createdAt.(type) {
+		case time.Time:
+			e.CreatedAt = v
+		case string:
+			e.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", v)
+		}
 		entries = append(entries, e)
 	}
 

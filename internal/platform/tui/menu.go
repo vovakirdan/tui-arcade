@@ -21,16 +21,16 @@ type MenuItem struct {
 
 // MenuModel is the Bubble Tea model for the game picker menu.
 type MenuModel struct {
-	items     []MenuItem
-	cursor    int
-	width     int
-	height    int
-	store     *storage.Store
-	config    core.RuntimeConfig
-	keyMapper *KeyMapper
-	quitting  bool
-	selected  *MenuItem // Set when user selects a game
-	showStats bool      // Toggle stats view with Tab
+	items          []MenuItem
+	cursor         int
+	width          int
+	height         int
+	store          *storage.Store
+	config         core.RuntimeConfig
+	keyMapper      *KeyMapper
+	quitting       bool
+	selected       *MenuItem // Set when user selects a game
+	openScoreboard bool      // True if user pressed Tab for scoreboard
 }
 
 // NewMenuModel creates a new menu model.
@@ -91,12 +91,6 @@ func (m MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKey processes keyboard input for menu navigation.
 func (m MenuModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle Tab for stats toggle
-	if msg.String() == "tab" {
-		m.showStats = !m.showStats
-		return m, nil
-	}
-
 	action := m.keyMapper.MapKeyToMenuAction(msg)
 
 	switch action {
@@ -115,11 +109,15 @@ func (m MenuModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case MenuActionSelect:
-		if len(m.items) > 0 && !m.showStats {
+		if len(m.items) > 0 {
 			selected := m.items[m.cursor]
 			m.selected = &selected
 			return m, tea.Quit // Exit menu to start game
 		}
+
+	case MenuActionScoreboard:
+		m.openScoreboard = true
+		return m, tea.Quit // Exit menu to show scoreboard
 	}
 
 	return m, nil
@@ -139,11 +137,6 @@ func (m MenuModel) View() string {
 	b.WriteString("\n")
 	b.WriteString(titleLine)
 	b.WriteString("\n\n")
-
-	if m.showStats {
-		// Stats view
-		return m.renderStatsView(&b)
-	}
 
 	// Subtitle
 	subtitle := "Select a game"
@@ -170,62 +163,7 @@ func (m MenuModel) View() string {
 
 	// Footer with controls
 	b.WriteString("\n")
-	controls := "Up/Down: Navigate  |  Enter: Select  |  Tab: Stats  |  Q: Quit"
-	b.WriteString(centerText(controls, m.width))
-	b.WriteString("\n")
-
-	return b.String()
-}
-
-// renderStatsView renders the statistics panel.
-func (m MenuModel) renderStatsView(b *strings.Builder) string {
-	subtitle := "Game Statistics"
-	b.WriteString(centerText(subtitle, m.width))
-	b.WriteString("\n\n")
-
-	// Get stats for all games
-	allStats, err := m.store.GetAllGamesStats()
-	if err != nil {
-		b.WriteString(centerText("Error loading stats", m.width))
-		b.WriteString("\n")
-	} else {
-		// Render stats for each game
-		for _, item := range m.items {
-			stats := allStats[item.GameID]
-
-			// Game title with box
-			gameHeader := fmt.Sprintf("[ %s ]", item.Title)
-			b.WriteString(centerText(gameHeader, m.width))
-			b.WriteString("\n")
-
-			if stats == nil || stats.GamesCount == 0 {
-				b.WriteString(centerText("No games played yet", m.width))
-				b.WriteString("\n\n")
-				continue
-			}
-
-			// Stats lines
-			lines := []string{
-				fmt.Sprintf("Games Played: %d", stats.GamesCount),
-				fmt.Sprintf("High Score:   %d", stats.HighScore),
-				fmt.Sprintf("Average:      %.0f", stats.AvgScore),
-				fmt.Sprintf("Total Score:  %d", stats.TotalScore),
-			}
-
-			if !stats.LastPlayed.IsZero() {
-				lines = append(lines, fmt.Sprintf("Last Played:  %s", stats.LastPlayed.Format("Jan 02, 15:04")))
-			}
-
-			for _, line := range lines {
-				b.WriteString(centerText(line, m.width))
-				b.WriteString("\n")
-			}
-			b.WriteString("\n")
-		}
-	}
-
-	// Footer
-	controls := "Tab: Back to Menu  |  Q: Quit"
+	controls := "Up/Down: Navigate  |  Enter: Select  |  Tab: Scores  |  Q: Quit"
 	b.WriteString(centerText(controls, m.width))
 	b.WriteString("\n")
 
@@ -242,6 +180,11 @@ func (m MenuModel) IsQuitting() bool {
 	return m.quitting
 }
 
+// WantsScoreboard returns true if user requested scoreboard.
+func (m MenuModel) WantsScoreboard() bool {
+	return m.openScoreboard
+}
+
 // Config returns the current runtime config (may have been updated by resize).
 func (m MenuModel) Config() core.RuntimeConfig {
 	return m.config
@@ -256,8 +199,17 @@ func centerText(text string, width int) string {
 	return strings.Repeat(" ", padding) + text
 }
 
-// RunMenu runs the menu and returns the selected game ID, or empty string if quit.
-func RunMenu(store *storage.Store, cfg core.RuntimeConfig) (string, multiplayer.MatchMode, core.RuntimeConfig, error) {
+// MenuResult holds the result of running the menu.
+type MenuResult struct {
+	GameID          string
+	Mode            multiplayer.MatchMode
+	Config          core.RuntimeConfig
+	WantsScoreboard bool
+	Quit            bool
+}
+
+// RunMenu runs the menu and returns the selection result.
+func RunMenu(store *storage.Store, cfg core.RuntimeConfig) (MenuResult, error) {
 	model := NewMenuModel(store, cfg)
 
 	p := tea.NewProgram(
@@ -267,17 +219,34 @@ func RunMenu(store *storage.Store, cfg core.RuntimeConfig) (string, multiplayer.
 
 	finalModel, err := p.Run()
 	if err != nil {
-		return "", multiplayer.MatchModeSolo, cfg, err
+		return MenuResult{Config: cfg}, err
 	}
 
 	m, ok := finalModel.(MenuModel)
 	if !ok {
-		return "", multiplayer.MatchModeSolo, cfg, nil
-	}
-	if m.IsQuitting() || m.Selected() == nil {
-		return "", multiplayer.MatchModeSolo, m.Config(), nil
+		return MenuResult{Config: cfg, Quit: true}, nil
 	}
 
-	selected := m.Selected()
-	return selected.GameID, selected.Mode, m.Config(), nil
+	result := MenuResult{
+		Config: m.Config(),
+	}
+
+	if m.WantsScoreboard() {
+		result.WantsScoreboard = true
+		return result, nil
+	}
+
+	if m.IsQuitting() {
+		result.Quit = true
+		return result, nil
+	}
+
+	if m.Selected() != nil {
+		result.GameID = m.Selected().GameID
+		result.Mode = m.Selected().Mode
+	} else {
+		result.Quit = true
+	}
+
+	return result, nil
 }

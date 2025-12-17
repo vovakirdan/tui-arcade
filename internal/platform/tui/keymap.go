@@ -84,13 +84,14 @@ const (
 	MenuActionSelect
 	MenuActionBack
 	MenuActionQuit
+	MenuActionScoreboard
 )
 
 // MapKeyToMenuAction translates a key to a menu action.
 func (km *KeyMapper) MapKeyToMenuAction(msg tea.KeyMsg) MenuAction {
-	key := msg.String()
+	k := msg.String()
 
-	switch key {
+	switch k {
 	case "ctrl+c", "q":
 		return MenuActionQuit
 	case "w", "up", "k": // vim-style k for up
@@ -101,6 +102,8 @@ func (km *KeyMapper) MapKeyToMenuAction(msg tea.KeyMsg) MenuAction {
 		return MenuActionSelect
 	case "b", "esc":
 		return MenuActionBack
+	case "tab": // Open scoreboard
+		return MenuActionScoreboard
 	}
 
 	return MenuActionNone

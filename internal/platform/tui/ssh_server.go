@@ -249,6 +249,7 @@ const (
 	SessionStateOnlineLobby
 	SessionStateInGame
 	SessionStateOnlineGame
+	SessionStateScoreboard
 )
 
 // SessionModel manages the full arcade session flow: menu -> game -> menu.
@@ -268,6 +269,7 @@ type SessionModel struct {
 	snakeMode    SnakeModeModel
 	t2048Mode    T2048ModeModel
 	lobby        OnlineLobbyModel
+	scoreboard   ScoreboardModel
 	game         registry.Game
 	gameModel    *GameModel
 	quitting     bool
@@ -328,6 +330,8 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateGame(msg)
 	case SessionStateOnlineGame:
 		return m.updateOnlineGame(msg)
+	case SessionStateScoreboard:
+		return m.updateScoreboard(msg)
 	}
 	return m, nil
 }
@@ -345,6 +349,13 @@ func (m SessionModel) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		m.notifyDisconnect()
 		return m, tea.Quit
+	}
+
+	// Check if user wants scoreboard
+	if m.menu.WantsScoreboard() {
+		m.state = SessionStateScoreboard
+		m.scoreboard = NewScoreboardModel(m.store, m.config.ScreenW, m.config.ScreenH)
+		return m, m.scoreboard.Init()
 	}
 
 	// Check if game was selected
@@ -537,6 +548,31 @@ func (m SessionModel) updateT2048Mode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t2048.SetStartLevel(selection.Level)
 		}
 		return m.startLocalGame(gameID, multiplayer.MatchModeSolo)
+	}
+
+	return m, cmd
+}
+
+// updateScoreboard handles scoreboard updates.
+func (m SessionModel) updateScoreboard(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	newModel, cmd := m.scoreboard.Update(msg)
+	if sbModel, ok := newModel.(ScoreboardModel); ok {
+		m.scoreboard = sbModel
+	}
+
+	// Check if user quit
+	if m.scoreboard.IsQuitting() {
+		m.quitting = true
+		m.notifyDisconnect()
+		return m, tea.Quit
+	}
+
+	// Check for back to menu
+	if m.scoreboard.IsGoingBack() {
+		m.state = SessionStateMenu
+		m.menu = NewMenuModel(m.store, m.config)
+		return m, m.menu.Init()
 	}
 
 	return m, cmd
@@ -750,6 +786,8 @@ func (m SessionModel) View() string {
 		return m.t2048Mode.View()
 	case SessionStateOnlineLobby:
 		return m.lobby.View()
+	case SessionStateScoreboard:
+		return m.scoreboard.View()
 	case SessionStateInGame:
 		if m.gameModel != nil {
 			return m.gameModel.View()

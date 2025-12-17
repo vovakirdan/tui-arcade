@@ -11,6 +11,15 @@ A terminal-based arcade gaming platform built with Go and Bubble Tea. Play class
 - **Score Persistence**: SQLite-based high score storage (pure Go, no CGO)
 - **Cross-Platform**: Single binary, runs anywhere Go compiles
 
+## "Screen" *shots*
+> To take a screenshot, press `Ctrl+S` in the game.
+ - [Breakout](#breakout-2)
+ - [Flappy Bird](#flappy-bird-1)
+ - [Dino Runner](#dino-runner-1)
+ - [Pong](#pong-1)
+ - [Snake](#snake-2)
+ - [2048](#2048-2)
+
 ## Installation
 
 ```bash
@@ -355,7 +364,7 @@ Configuration files can be placed in `~/.arcade/` or `./configs/`:
 - `~/.arcade/scores.db` - High scores database
 - `~/.arcade/host_key` - SSH server host key (auto-generated)
 
-## Examples
+## Screenshots
 
 ### Breakout
 ```bash

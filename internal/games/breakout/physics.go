@@ -71,6 +71,8 @@ func (f Fixed) Sign() int {
 type Ball struct {
 	X, Y   Fixed // Position (center)
 	VX, VY Fixed // Velocity per tick
+	Stuck  bool  // Whether ball is stuck to paddle (sticky power-up)
+	Active bool  // Whether ball is in play (for multi-ball)
 }
 
 // CellX returns the ball's X position in cell coordinates.

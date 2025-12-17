@@ -23,13 +23,27 @@ const (
 // Brick glyphs by row (cycling through)
 var BrickGlyphs = []rune{'█', '▓', '▒', '░', '#', '+', '*', '='}
 
+// Hard brick glyph
+const HardBrickGlyph = '▓'
+
+// Solid brick glyph
+const SolidBrickGlyph = '█'
+
 // GameState constants
 const (
 	StateServe    = "serve"    // Ball on paddle, waiting for launch
 	StatePlaying  = "playing"  // Ball in play
 	StateGameOver = "gameover" // No lives left
-	StateWin      = "win"      // All bricks destroyed
+	StateWin      = "win"      // All levels completed (campaign only)
 	StatePaused   = "paused"   // Game paused
+)
+
+// GameMode represents the game mode.
+type GameMode int
+
+const (
+	ModeCampaign GameMode = iota // Play through levels, win at end
+	ModeEndless                  // Play forever, score until game over
 )
 
 // configPath stores the custom config path set via CLI
@@ -61,19 +75,28 @@ func SetDifficultyPreset(preset string) {
 
 // Game implements the Breakout game logic.
 type Game struct {
+	// Game mode
+	mode GameMode
+
 	// Game objects
 	paddle *Paddle
-	ball   *Ball
+	balls  []*Ball // Multiple balls supported
 	level  *Level
 
+	// Power-up system
+	powerups *PowerUpManager
+
 	// Game state
-	state       string
-	score       int
-	lives       int
-	levelIndex  int
-	tickCount   int
-	serveDelay  int // Countdown before allowing serve after miss
-	bricksTotal int // Total bricks at level start
+	state            string
+	score            int
+	lives            int
+	levelIndex       int
+	tickCount        int
+	serveDelay       int   // Countdown before allowing serve after miss
+	bricksTotal      int   // Total bricks at level start
+	endlessCycle     int   // Number of times levels have cycled (endless mode)
+	basePaddleWidth  int   // Original paddle width before effects
+	currentBallSpeed Fixed // Current base ball speed (affected by power-ups)
 
 	// Configuration
 	runtime    core.RuntimeConfig
@@ -90,18 +113,29 @@ type Game struct {
 	screenTooSmall bool
 }
 
-// New creates a new Breakout game instance.
+// New creates a new Breakout game instance (campaign mode).
 func New() *Game {
-	return &Game{}
+	return &Game{mode: ModeCampaign}
+}
+
+// NewEndless creates a new Breakout game instance in endless mode.
+func NewEndless() *Game {
+	return &Game{mode: ModeEndless}
 }
 
 // ID returns the unique identifier for this game.
 func (g *Game) ID() string {
+	if g.mode == ModeEndless {
+		return "breakout_endless"
+	}
 	return "breakout"
 }
 
 // Title returns the display name for this game.
 func (g *Game) Title() string {
+	if g.mode == ModeEndless {
+		return "Breakout (Endless)"
+	}
 	return "Breakout"
 }
 
@@ -139,6 +173,12 @@ func (g *Game) Reset(runtime core.RuntimeConfig) {
 	g.levelIndex = 0
 	g.tickCount = 0
 	g.serveDelay = 0
+	g.endlessCycle = 0
+	g.basePaddleWidth = cfg.Paddle.Width
+	g.currentBallSpeed = Fixed(cfg.Physics.BallSpeed)
+
+	// Initialize power-up manager
+	g.powerups = NewPowerUpManager(runtime.Seed, DefaultPowerUpConfig())
 
 	// Load level
 	g.loadLevel(g.levelIndex)
@@ -150,7 +190,8 @@ func (g *Game) Reset(runtime core.RuntimeConfig) {
 		Width: cfg.Paddle.Width,
 	}
 
-	// Initialize ball on paddle
+	// Initialize balls slice with one ball on paddle
+	g.balls = make([]*Ball, 0, 8)
 	g.placeBallOnPaddle()
 	g.state = StateServe
 }
@@ -177,25 +218,55 @@ func (g *Game) loadLevel(index int) {
 	g.bricksTotal = g.level.CountAlive()
 }
 
-// placeBallOnPaddle positions the ball on top of the paddle.
+// placeBallOnPaddle creates a new ball on the paddle.
 func (g *Game) placeBallOnPaddle() {
-	g.ball = &Ball{
-		X:  g.paddle.CenterX(),
-		Y:  ToFixed(g.paddle.Y - 1),
-		VX: 0,
-		VY: 0,
+	ball := &Ball{
+		X:      g.paddle.CenterX(),
+		Y:      ToFixed(g.paddle.Y - 1),
+		VX:     0,
+		VY:     0,
+		Stuck:  true,
+		Active: true,
 	}
+	g.balls = append(g.balls, ball)
 }
 
-// launchBall starts the ball moving.
-func (g *Game) launchBall() {
-	speed := Fixed(g.cfg.Physics.BallSpeed) // Already scaled by 1000 in config
+// launchBalls launches all stuck balls.
+func (g *Game) launchBalls() {
+	speed := g.currentBallSpeed
 
-	// Launch upward with slight horizontal bias
-	g.ball.VX = speed / 4 // Slight rightward bias
-	g.ball.VY = -speed
+	for _, ball := range g.balls {
+		if ball.Stuck && ball.Active {
+			// Launch upward with slight horizontal bias
+			ball.VX = speed / 4
+			ball.VY = -speed
+			ball.Stuck = false
+		}
+	}
 
 	g.state = StatePlaying
+}
+
+// countActiveBalls returns the number of active balls.
+func (g *Game) countActiveBalls() int {
+	count := 0
+	for _, ball := range g.balls {
+		if ball.Active {
+			count++
+		}
+	}
+	return count
+}
+
+// countStuckBalls returns the number of stuck balls.
+func (g *Game) countStuckBalls() int {
+	count := 0
+	for _, ball := range g.balls {
+		if ball.Active && ball.Stuck {
+			count++
+		}
+	}
+	return count
 }
 
 // Step advances the game by one tick.
@@ -232,22 +303,42 @@ func (g *Game) Step(in core.InputFrame) core.StepResult {
 		return core.StepResult{State: g.State()}
 	}
 
+	// Expire power-up effects
+	expired := g.powerups.ExpireEffects(g.tickCount)
+	for _, effectType := range expired {
+		g.onEffectExpired(effectType)
+	}
+
 	// Handle paddle movement
 	g.updatePaddle(in)
 
+	// Update pickups
+	g.powerups.Update(g.runtime.ScreenH)
+
+	// Check pickup collection
+	collected := g.powerups.CheckPaddleCollision(g.paddle)
+	if collected >= 0 {
+		g.activatePickup(collected)
+	}
+
 	// Handle ball launch in serve state
 	if g.state == StateServe {
-		// Ball follows paddle
-		g.placeBallOnPaddle()
+		// Update stuck balls to follow paddle
+		for _, ball := range g.balls {
+			if ball.Active && ball.Stuck {
+				ball.X = g.paddle.CenterX()
+				ball.Y = ToFixed(g.paddle.Y - 1)
+			}
+		}
 
 		if in.Has(core.ActionJump) { // Space to launch
-			g.launchBall()
+			g.launchBalls()
 		}
 		return core.StepResult{State: g.State()}
 	}
 
-	// Update ball position
-	g.updateBall()
+	// Update all balls
+	g.updateBalls()
 
 	return core.StepResult{State: g.State()}
 }
@@ -270,49 +361,236 @@ func (g *Game) updatePaddle(in core.InputFrame) {
 	g.paddle.X = ClampFixed(g.paddle.X, minX, maxX)
 }
 
-// updateBall handles ball movement and collisions.
-func (g *Game) updateBall() {
-	// Move ball
-	g.ball.Move()
+// updateBalls handles all ball movements and collisions.
+func (g *Game) updateBalls() {
+	isSticky := g.powerups.HasEffect(EffectSticky)
 
-	// Check wall collisions
-	side, fellOff := CheckWallCollision(g.ball, g.runtime.ScreenW, g.runtime.ScreenH)
-	if fellOff {
-		g.handleMiss()
-		return
-	}
-	if side != CollisionNone {
-		ApplyCollisionBounce(g.ball, side)
-	}
+	for _, ball := range g.balls {
+		if !ball.Active || ball.Stuck {
+			continue
+		}
 
-	// Check paddle collision
-	baseSpeed := Fixed(g.cfg.Physics.BallSpeed) // Already scaled by 1000 in config
-	if CheckPaddleCollision(g.ball, g.paddle, baseSpeed) {
-		// Collision handled in CheckPaddleCollision
-		return
-	}
+		// Move ball
+		ball.Move()
 
-	// Check brick collisions
-	row, col, brickSide := CheckBrickCollision(g.ball, g.level, g.brickAreaTop, g.brickHeight, g.brickWidth)
-	if brickSide != CollisionNone && row >= 0 && col >= 0 {
-		brick := &g.level.Bricks[row][col]
-		if brick.Alive {
-			// Destroy brick
-			brick.Alive = false
-			g.score += brick.Points
+		// Check wall collisions
+		side, fellOff := CheckWallCollision(ball, g.runtime.ScreenW, g.runtime.ScreenH)
+		if fellOff {
+			ball.Active = false
+			continue
+		}
+		if side != CollisionNone {
+			ApplyCollisionBounce(ball, side)
+		}
 
-			// Bounce ball
-			ApplyCollisionBounce(g.ball, brickSide)
-
-			// Check win condition
-			if g.level.CountAlive() == 0 {
-				g.handleWin()
+		// Check paddle collision
+		if CheckPaddleCollision(ball, g.paddle, g.currentBallSpeed) {
+			// If sticky effect active, stick to paddle
+			if isSticky {
+				ball.Stuck = true
+				ball.VX = 0
+				ball.VY = 0
+				ball.X = g.paddle.CenterX()
+				ball.Y = ToFixed(g.paddle.Y - 1)
 			}
+			continue
+		}
+
+		// Check brick collisions
+		row, col, brickSide := CheckBrickCollision(ball, g.level, g.brickAreaTop, g.brickHeight, g.brickWidth)
+		if brickSide != CollisionNone && row >= 0 && col >= 0 {
+			brick := &g.level.Bricks[row][col]
+			if brick.Alive {
+				// Handle brick hit
+				g.hitBrick(brick, row, col)
+
+				// Bounce ball
+				ApplyCollisionBounce(ball, brickSide)
+			}
+		}
+	}
+
+	// Check if all balls are lost
+	if g.countActiveBalls() == 0 {
+		g.handleMiss()
+	} else if g.countStuckBalls() > 0 && g.countStuckBalls() == g.countActiveBalls() {
+		// All remaining balls are stuck, go to serve state
+		g.state = StateServe
+	}
+}
+
+// hitBrick handles hitting a brick.
+func (g *Game) hitBrick(brick *Brick, row, col int) {
+	// Solid bricks cannot be destroyed
+	if brick.Type == BrickSolid {
+		return
+	}
+
+	brick.HP--
+	if brick.HP <= 0 {
+		// Destroy brick
+		brick.Alive = false
+		g.score += brick.Points
+
+		// Try to spawn power-up
+		brickCenterX := col*g.brickWidth + g.brickWidth/2
+		brickCenterY := g.brickAreaTop + row*g.brickHeight
+		g.powerups.TrySpawnPickup(brickCenterX, brickCenterY)
+
+		// Check win condition
+		if g.level.CountAlive() == 0 {
+			g.handleLevelClear()
 		}
 	}
 }
 
-// handleMiss handles when the ball falls below the paddle.
+// activatePickup activates a collected pickup.
+func (g *Game) activatePickup(pickupType PickupType) {
+	cfg := g.powerups.Config
+
+	switch pickupType {
+	case PickupWiden:
+		g.powerups.AddEffect(EffectWiden, g.tickCount, cfg.DurationWiden)
+		g.powerups.RemoveEffect(EffectShrink) // Cancel shrink
+		g.applyPaddleWidthEffect()
+
+	case PickupShrink:
+		g.powerups.AddEffect(EffectShrink, g.tickCount, cfg.DurationShrink)
+		g.powerups.RemoveEffect(EffectWiden) // Cancel widen
+		g.applyPaddleWidthEffect()
+
+	case PickupMultiball:
+		g.spawnMultiballs(cfg.MultiballCount)
+
+	case PickupSticky:
+		g.powerups.AddEffect(EffectSticky, g.tickCount, cfg.DurationSticky)
+
+	case PickupSpeedUp:
+		g.powerups.AddEffect(EffectSpeedUp, g.tickCount, cfg.DurationSpeedUp)
+		g.powerups.RemoveEffect(EffectSlowDown) // Cancel slow down
+		g.applyBallSpeedEffect()
+
+	case PickupSlowDown:
+		g.powerups.AddEffect(EffectSlowDown, g.tickCount, cfg.DurationSlowDown)
+		g.powerups.RemoveEffect(EffectSpeedUp) // Cancel speed up
+		g.applyBallSpeedEffect()
+
+	case PickupExtraLife:
+		g.lives++
+	}
+}
+
+// onEffectExpired handles effect expiration.
+func (g *Game) onEffectExpired(effectType EffectType) {
+	switch effectType {
+	case EffectWiden, EffectShrink:
+		g.applyPaddleWidthEffect()
+	case EffectSpeedUp, EffectSlowDown:
+		g.applyBallSpeedEffect()
+	}
+}
+
+// applyPaddleWidthEffect applies paddle width based on active effects.
+func (g *Game) applyPaddleWidthEffect() {
+	cfg := g.powerups.Config
+	newWidth := g.basePaddleWidth
+
+	if g.powerups.HasEffect(EffectWiden) {
+		newWidth += cfg.WidenAmount
+	} else if g.powerups.HasEffect(EffectShrink) {
+		newWidth -= cfg.ShrinkAmount
+	}
+
+	// Clamp
+	if newWidth < cfg.MinPaddleWidth {
+		newWidth = cfg.MinPaddleWidth
+	}
+	if newWidth > cfg.MaxPaddleWidth {
+		newWidth = cfg.MaxPaddleWidth
+	}
+
+	g.paddle.Width = newWidth
+}
+
+// applyBallSpeedEffect applies ball speed based on active effects.
+func (g *Game) applyBallSpeedEffect() {
+	cfg := g.powerups.Config
+	baseSpeed := Fixed(g.cfg.Physics.BallSpeed)
+
+	switch {
+	case g.powerups.HasEffect(EffectSpeedUp):
+		// Speed up: multiply by 1.5
+		g.currentBallSpeed = baseSpeed.Mul(cfg.SpeedMultiplier).Div(100)
+	case g.powerups.HasEffect(EffectSlowDown):
+		// Slow down: multiply by 0.67 (100/150)
+		g.currentBallSpeed = baseSpeed.Mul(100).Div(cfg.SpeedMultiplier)
+	default:
+		g.currentBallSpeed = baseSpeed
+	}
+
+	// Clamp
+	minSpeed := Fixed(cfg.MinBallSpeed)
+	maxSpeed := Fixed(cfg.MaxBallSpeed)
+	g.currentBallSpeed = ClampFixed(g.currentBallSpeed, minSpeed, maxSpeed)
+}
+
+// spawnMultiballs spawns additional balls.
+func (g *Game) spawnMultiballs(count int) {
+	// Find an active ball to clone
+	var sourceBall *Ball
+	for _, ball := range g.balls {
+		if ball.Active && !ball.Stuck {
+			sourceBall = ball
+			break
+		}
+	}
+
+	if sourceBall == nil {
+		// No active non-stuck ball, use first active ball
+		for _, ball := range g.balls {
+			if ball.Active {
+				sourceBall = ball
+				break
+			}
+		}
+	}
+
+	if sourceBall == nil {
+		return
+	}
+
+	speed := g.currentBallSpeed
+
+	for i := range count {
+		// Create ball at same position with different angle
+		angleOffset := Fixed((i + 1) * 300) // Spread angles
+		if i%2 == 1 {
+			angleOffset = -angleOffset
+		}
+
+		newBall := &Ball{
+			X:      sourceBall.X,
+			Y:      sourceBall.Y,
+			VX:     sourceBall.VX.Add(angleOffset),
+			VY:     sourceBall.VY,
+			Stuck:  false,
+			Active: true,
+		}
+
+		// Normalize speed
+		// Simple normalization: ensure total speed magnitude is roughly correct
+		if newBall.VX.Abs() > speed {
+			newBall.VX = speed.Mul(newBall.VX.Sign())
+		}
+		if newBall.VY == 0 {
+			newBall.VY = -speed
+		}
+
+		g.balls = append(g.balls, newBall)
+	}
+}
+
+// handleMiss handles when all balls are lost.
 func (g *Game) handleMiss() {
 	g.lives--
 
@@ -321,24 +599,49 @@ func (g *Game) handleMiss() {
 		return
 	}
 
-	// Reset ball on paddle
+	// Clear all balls and power-ups
+	g.balls = g.balls[:0]
+	g.powerups.Pickups = g.powerups.Pickups[:0]
+	g.powerups.Effects = g.powerups.Effects[:0]
+
+	// Reset paddle width and ball speed
+	g.paddle.Width = g.basePaddleWidth
+	g.currentBallSpeed = Fixed(g.cfg.Physics.BallSpeed)
+
+	// Place new ball on paddle
 	g.placeBallOnPaddle()
 	g.state = StateServe
 	g.serveDelay = 60 // 1 second delay before player can serve again
 }
 
-// handleWin handles when all bricks are destroyed.
-func (g *Game) handleWin() {
+// handleLevelClear handles when all bricks are destroyed.
+func (g *Game) handleLevelClear() {
 	g.levelIndex++
 
-	// Check if there are more levels
-	if g.levelIndex >= LevelCount() {
-		g.state = StateWin
-		return
+	if g.mode == ModeCampaign {
+		// Campaign mode: check if all levels completed
+		if g.levelIndex >= LevelCount() {
+			g.state = StateWin
+			return
+		}
+	} else {
+		// Endless mode: cycle through levels
+		if g.levelIndex >= LevelCount() {
+			g.levelIndex = 0
+			g.endlessCycle++
+			// Increase difficulty slightly each cycle
+			g.currentBallSpeed = g.currentBallSpeed.Add(Fixed(20)) // +0.02 per cycle
+		}
 	}
 
 	// Load next level
 	g.loadLevel(g.levelIndex)
+
+	// Clear pickups but keep effects
+	g.powerups.Pickups = g.powerups.Pickups[:0]
+
+	// Reset balls - keep one on paddle
+	g.balls = g.balls[:0]
 	g.placeBallOnPaddle()
 	g.state = StateServe
 	g.serveDelay = 60
@@ -363,11 +666,14 @@ func (g *Game) Render(dst *core.Screen) {
 	// Draw bricks
 	g.renderBricks(dst)
 
+	// Draw pickups
+	g.renderPickups(dst)
+
 	// Draw paddle
 	g.renderPaddle(dst)
 
-	// Draw ball
-	g.renderBall(dst)
+	// Draw balls
+	g.renderBalls(dst)
 
 	// Draw overlay messages
 	g.renderOverlay(dst)
@@ -384,13 +690,43 @@ func (g *Game) renderHUD(dst *core.Screen) {
 	dst.DrawTextCentered(0, livesText)
 
 	// Level on right
-	levelText := fmt.Sprintf("Level: %d", g.levelIndex+1)
+	var levelText string
+	if g.mode == ModeEndless {
+		totalLevel := g.endlessCycle*LevelCount() + g.levelIndex + 1
+		levelText = fmt.Sprintf("Level: %d", totalLevel)
+	} else {
+		levelText = fmt.Sprintf("Level: %d/%d", g.levelIndex+1, LevelCount())
+	}
 	dst.DrawText(dst.Width()-len(levelText)-1, 0, levelText)
 
-	// Separator line
-	for x := range dst.Width() {
-		dst.Set(x, 1, BorderHoriz)
+	// Effects display (compact) on row 1
+	effectsStr := g.buildEffectsString()
+	if effectsStr != "" {
+		dst.DrawText(1, 1, effectsStr)
+	} else {
+		// Separator line if no effects
+		for x := range dst.Width() {
+			dst.Set(x, 1, BorderHoriz)
+		}
 	}
+}
+
+// buildEffectsString creates a compact effects display.
+func (g *Game) buildEffectsString() string {
+	if len(g.powerups.Effects) == 0 {
+		return ""
+	}
+
+	result := ""
+	for _, e := range g.powerups.Effects {
+		remaining := e.TicksRemaining(g.tickCount)
+		secs := remaining / 60
+		if result != "" {
+			result += " "
+		}
+		result += fmt.Sprintf("%s(%d)", e.Type.String(), secs)
+	}
+	return result
 }
 
 // renderBricks draws all alive bricks.
@@ -406,8 +742,20 @@ func (g *Game) renderBricks(dst *core.Screen) {
 			screenY := g.brickAreaTop + row*g.brickHeight
 			screenX := col * g.brickWidth
 
-			// Get glyph based on row
-			glyph := BrickGlyphs[row%len(BrickGlyphs)]
+			// Get glyph based on brick type
+			var glyph rune
+			switch brick.Type {
+			case BrickHard:
+				if brick.HP > 1 {
+					glyph = HardBrickGlyph
+				} else {
+					glyph = BrickGlyphs[row%len(BrickGlyphs)]
+				}
+			case BrickSolid:
+				glyph = SolidBrickGlyph
+			default:
+				glyph = BrickGlyphs[row%len(BrickGlyphs)]
+			}
 
 			// Draw brick
 			for dx := range g.brickWidth {
@@ -415,6 +763,22 @@ func (g *Game) renderBricks(dst *core.Screen) {
 					dst.Set(screenX+dx, screenY, glyph)
 				}
 			}
+		}
+	}
+}
+
+// renderPickups draws falling power-ups.
+func (g *Game) renderPickups(dst *core.Screen) {
+	for _, pickup := range g.powerups.Pickups {
+		if !pickup.Active {
+			continue
+		}
+
+		x := pickup.CellX()
+		y := pickup.CellY()
+
+		if x >= 0 && x < dst.Width() && y >= 0 && y < dst.Height() {
+			dst.Set(x, y, pickup.Type.Glyph())
 		}
 	}
 }
@@ -429,13 +793,19 @@ func (g *Game) renderPaddle(dst *core.Screen) {
 	}
 }
 
-// renderBall draws the ball.
-func (g *Game) renderBall(dst *core.Screen) {
-	ballX := g.ball.CellX()
-	ballY := g.ball.CellY()
+// renderBalls draws all balls.
+func (g *Game) renderBalls(dst *core.Screen) {
+	for _, ball := range g.balls {
+		if !ball.Active {
+			continue
+		}
 
-	if ballX >= 0 && ballX < dst.Width() && ballY >= 0 && ballY < dst.Height() {
-		dst.Set(ballX, ballY, BallChar)
+		ballX := ball.CellX()
+		ballY := ball.CellY()
+
+		if ballX >= 0 && ballX < dst.Width() && ballY >= 0 && ballY < dst.Height() {
+			dst.Set(ballX, ballY, BallChar)
+		}
 	}
 }
 
@@ -493,9 +863,12 @@ func (g *Game) State() core.GameState {
 	}
 }
 
-// Register the game with the registry
+// Register the games with the registry
 func init() {
 	registry.Register("breakout", func() registry.Game {
 		return New()
+	})
+	registry.Register("breakout_endless", func() registry.Game {
+		return NewEndless()
 	})
 }

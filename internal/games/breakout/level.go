@@ -7,7 +7,8 @@ type BrickType int
 const (
 	BrickEmpty  BrickType = iota // No brick
 	BrickNormal                  // Standard brick, destroyed in one hit
-	// Future: BrickHard, BrickIndestructible, etc.
+	BrickHard                    // Requires 2 hits to destroy
+	BrickSolid                   // Indestructible
 )
 
 // Brick represents a single brick in the level.
@@ -15,10 +16,12 @@ type Brick struct {
 	Type   BrickType
 	Points int  // Points awarded when destroyed
 	Alive  bool // Whether brick is still present
+	HP     int  // Hit points remaining (for hard bricks)
 }
 
 // Level represents a playable level with brick layout.
 type Level struct {
+	ID     string
 	Name   string
 	Width  int       // Number of brick columns
 	Height int       // Number of brick rows
@@ -28,6 +31,7 @@ type Level struct {
 // Clone creates a deep copy of the level (for reset).
 func (l *Level) Clone() *Level {
 	clone := &Level{
+		ID:     l.ID,
 		Name:   l.Name,
 		Width:  l.Width,
 		Height: l.Height,
@@ -40,12 +44,12 @@ func (l *Level) Clone() *Level {
 	return clone
 }
 
-// CountAlive returns the number of remaining (alive) bricks.
+// CountAlive returns the number of remaining (alive, destroyable) bricks.
 func (l *Level) CountAlive() int {
 	count := 0
 	for _, row := range l.Bricks {
 		for _, b := range row {
-			if b.Alive && b.Type != BrickEmpty {
+			if b.Alive && b.Type != BrickEmpty && b.Type != BrickSolid {
 				count++
 			}
 		}
@@ -59,9 +63,11 @@ func (l *Level) CountAlive() int {
 //	'#' = normal brick (10 points)
 //	'.' = empty
 //	'1'-'9' = brick with custom points (10 * digit)
-func ParseLevel(name string, lines []string) *Level {
+//	'H' = hard brick (2 HP, 20 points)
+//	'X' = solid/indestructible brick (0 points)
+func ParseLevel(id, name string, lines []string) *Level {
 	if len(lines) == 0 {
-		return &Level{Name: name}
+		return &Level{ID: id, Name: name}
 	}
 
 	// Find max width
@@ -73,6 +79,7 @@ func ParseLevel(name string, lines []string) *Level {
 	}
 
 	level := &Level{
+		ID:     id,
 		Name:   name,
 		Width:  maxWidth,
 		Height: len(lines),
@@ -93,18 +100,35 @@ func ParseLevel(name string, lines []string) *Level {
 					Type:   BrickNormal,
 					Points: 10,
 					Alive:  true,
+					HP:     1,
 				}
 			case ch >= '1' && ch <= '9':
 				level.Bricks[row][col] = Brick{
 					Type:   BrickNormal,
 					Points: int(ch-'0') * 10,
 					Alive:  true,
+					HP:     1,
+				}
+			case ch == 'H' || ch == 'h':
+				level.Bricks[row][col] = Brick{
+					Type:   BrickHard,
+					Points: 20,
+					Alive:  true,
+					HP:     2,
+				}
+			case ch == 'X' || ch == 'x':
+				level.Bricks[row][col] = Brick{
+					Type:   BrickSolid,
+					Points: 0,
+					Alive:  true,
+					HP:     999, // Effectively indestructible
 				}
 			default:
 				level.Bricks[row][col] = Brick{
 					Type:   BrickEmpty,
 					Points: 0,
 					Alive:  false,
+					HP:     0,
 				}
 			}
 		}
@@ -113,27 +137,29 @@ func ParseLevel(name string, lines []string) *Level {
 	return level
 }
 
-// DefaultLevels returns the built-in levels.
-func DefaultLevels() []*Level {
+// BuiltinLevels returns all built-in levels.
+func BuiltinLevels() []*Level {
 	return []*Level{
-		ParseLevel("Classic", []string{
+		// Level 1: Classic
+		ParseLevel("classic", "Classic", []string{
 			"####################",
 			"####################",
 			"####################",
-			"####################",
-			"####################",
-			".#####......#####..",
 			"####################",
 			"####################",
 		}),
-		ParseLevel("Pyramid", []string{
+
+		// Level 2: Pyramid
+		ParseLevel("pyramid", "Pyramid", []string{
 			"........####........",
 			"......########......",
 			"....############....",
 			"..################..",
 			"####################",
 		}),
-		ParseLevel("Checkerboard", []string{
+
+		// Level 3: Checkerboard
+		ParseLevel("checker", "Checkerboard", []string{
 			"#.#.#.#.#.#.#.#.#.#.",
 			".#.#.#.#.#.#.#.#.#.#",
 			"#.#.#.#.#.#.#.#.#.#.",
@@ -141,19 +167,116 @@ func DefaultLevels() []*Level {
 			"#.#.#.#.#.#.#.#.#.#.",
 			".#.#.#.#.#.#.#.#.#.#",
 		}),
+
+		// Level 4: Diamond
+		ParseLevel("diamond", "Diamond", []string{
+			".........##.........",
+			"........####........",
+			".......######.......",
+			"......########......",
+			".....##########.....",
+			"......########......",
+			".......######.......",
+			"........####........",
+			".........##.........",
+		}),
+
+		// Level 5: Fortress (with hard bricks)
+		ParseLevel("fortress", "Fortress", []string{
+			"HHHHHHHHHHHHHHHHHHHH",
+			"H..................H",
+			"H.################.H",
+			"H.################.H",
+			"H.################.H",
+			"H..................H",
+			"HHHHHHHHHHHHHHHHHHHH",
+		}),
+
+		// Level 6: Striped
+		ParseLevel("striped", "Striped", []string{
+			"####################",
+			"....................",
+			"####################",
+			"....................",
+			"####################",
+			"....................",
+			"####################",
+		}),
+
+		// Level 7: Invaders
+		ParseLevel("invaders", "Invaders", []string{
+			"..#..........#......",
+			".###........###.....",
+			"#####......#####....",
+			"#.#.#......#.#.#....",
+			"#####......#####....",
+			"....................",
+			"..#..........#......",
+			".###........###.....",
+			"#####......#####....",
+			"#.#.#......#.#.#....",
+			"#####......#####....",
+		}),
+
+		// Level 8: Heart
+		ParseLevel("heart", "Heart", []string{
+			"..##....##..........",
+			".####..####.........",
+			"##############......",
+			"##############......",
+			".############.......",
+			"..##########........",
+			"...########.........",
+			"....######..........",
+			".....####...........",
+			"......##............",
+		}),
+
+		// Level 9: Castle (with solid blocks)
+		ParseLevel("castle", "Castle", []string{
+			"X..X....X..X....X..X",
+			"XXXX....XXXX....XXXX",
+			"X..X....X..X....X..X",
+			"....................",
+			"####################",
+			"####################",
+			"####################",
+			"####################",
+		}),
+
+		// Level 10: Final Boss (hard bricks everywhere)
+		ParseLevel("boss", "Final Boss", []string{
+			"HHHHHHHHHHHHHHHHHHHH",
+			"H##################H",
+			"H##################H",
+			"H##################H",
+			"H##################H",
+			"H##################H",
+			"HHHHHHHHHHHHHHHHHHHH",
+		}),
 	}
 }
 
-// GetLevel returns a level by index (wraps around if index > len).
+// GetLevelByID returns a level by its ID.
+func GetLevelByID(id string) (*Level, bool) {
+	for _, level := range BuiltinLevels() {
+		if level.ID == id {
+			return level.Clone(), true
+		}
+	}
+	return nil, false
+}
+
+// GetLevel returns a level by index (wraps around if index >= len).
 func GetLevel(index int) *Level {
-	levels := DefaultLevels()
+	levels := BuiltinLevels()
 	if len(levels) == 0 {
-		return ParseLevel("Empty", []string{})
+		return ParseLevel("empty", "Empty", []string{})
 	}
 	return levels[index%len(levels)].Clone()
 }
 
 // LevelCount returns the total number of available levels.
 func LevelCount() int {
-	return len(DefaultLevels())
+	return len(BuiltinLevels())
 }

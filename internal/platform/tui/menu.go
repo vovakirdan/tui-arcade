@@ -39,6 +39,11 @@ func NewMenuModel(store *storage.Store, cfg core.RuntimeConfig) MenuModel {
 	items := make([]MenuItem, 0, len(games))
 
 	for _, g := range games {
+		// Skip breakout_endless - it's accessible via Breakout sub-menu
+		if g.ID == "breakout_endless" {
+			continue
+		}
+
 		mode := multiplayer.MatchModeSolo
 		// Pong is vs CPU mode
 		if g.ID == "pong" {

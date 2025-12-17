@@ -52,6 +52,9 @@ var configPath string
 // difficultyPreset stores the difficulty preset set via CLI
 var difficultyPreset config.DifficultyPreset
 
+// selectedStartLevel stores the starting level (1-10, 0 means default)
+var selectedStartLevel int
+
 // SetConfigPath sets the custom config path for loading.
 func SetConfigPath(path string) {
 	configPath = path
@@ -71,6 +74,16 @@ func SetDifficultyPreset(preset string) {
 	default:
 		difficultyPreset = ""
 	}
+}
+
+// SetStartLevel sets the starting level (1-10). 0 means start from beginning.
+func SetStartLevel(level int) {
+	selectedStartLevel = level
+}
+
+// GetStartLevel returns the currently selected start level.
+func GetStartLevel() int {
+	return selectedStartLevel
 }
 
 // Game implements the Breakout game logic.
@@ -170,12 +183,19 @@ func (g *Game) Reset(runtime core.RuntimeConfig) {
 	// Initialize game state
 	g.score = 0
 	g.lives = cfg.Gameplay.Lives
-	g.levelIndex = 0
 	g.tickCount = 0
 	g.serveDelay = 0
 	g.endlessCycle = 0
 	g.basePaddleWidth = cfg.Paddle.Width
 	g.currentBallSpeed = Fixed(cfg.Physics.BallSpeed)
+
+	// Set starting level (1-10 -> index 0-9)
+	if selectedStartLevel > 0 && selectedStartLevel <= LevelCount() {
+		g.levelIndex = selectedStartLevel - 1
+		selectedStartLevel = 0 // Reset after use
+	} else {
+		g.levelIndex = 0
+	}
 
 	// Initialize power-up manager
 	g.powerups = NewPowerUpManager(runtime.Seed, DefaultPowerUpConfig())

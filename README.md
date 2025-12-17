@@ -4,7 +4,7 @@ A terminal-based arcade gaming platform built with Go and Bubble Tea. Play class
 
 ## Features
 
-- **Classic Games**: Flappy Bird, Dino Runner, and Pong
+- **Classic Games**: Flappy Bird, Dino Runner, Breakout, and Pong
 - **SSH Server**: Host an arcade server for remote players
 - **Online Multiplayer**: Play Pong against other players over SSH
 - **Fixed FPS Simulation**: Deterministic game logic at configurable tick rates
@@ -102,6 +102,16 @@ When connected to the SSH server:
 | W / Up | Move paddle up |
 | S / Down | Move paddle down |
 
+### Breakout
+
+| Key | Action |
+|-----|--------|
+| A / Left | Move paddle left |
+| D / Right | Move paddle right |
+| Space | Launch ball / Release sticky ball |
+| P | Pause |
+| R | Restart (after game over) |
+
 ## Available Games
 
 ### Flappy Bird
@@ -115,6 +125,46 @@ Classic two-player pong game. Play against CPU or challenge another player onlin
 
 - **Vs CPU**: Play against an AI opponent with adjustable difficulty
 - **Online PvP**: Host or join a game to play against another SSH-connected player
+
+### Breakout
+Classic brick-breaker game with power-ups and multiple levels!
+
+**Game Modes:**
+- **Campaign**: Play through 10 unique levels. Complete all to win!
+- **Endless**: Cycle through levels forever with increasing difficulty
+- **Level Select**: Start from any level in campaign mode
+
+**Brick Types:**
+| Type | Symbol | Description |
+|------|--------|-------------|
+| Normal | `#` | Destroyed in one hit (10 points) |
+| Hard | `H` | Requires 2 hits to destroy (20 points) |
+| Solid | `X` | Indestructible |
+
+**Power-Ups:**
+Power-ups drop from destroyed bricks (18% chance):
+
+| Pickup | Symbol | Effect | Duration |
+|--------|--------|--------|----------|
+| Widen | W | Expands paddle | 12 sec |
+| Shrink | S | Shrinks paddle | 12 sec |
+| Multiball | M | Spawns +2 balls | Instant |
+| Sticky | T | Balls stick to paddle | 10 sec |
+| Speed Up | + | Increases ball speed | 8 sec |
+| Slow Down | - | Decreases ball speed | 8 sec |
+| Extra Life | ♥ | +1 life | Instant |
+
+**Levels:**
+1. Classic - Simple brick wall
+2. Pyramid - Triangle pattern
+3. Checkerboard - Alternating bricks
+4. Diamond - Diamond shape
+5. Fortress - Hard brick walls with normal inside
+6. Striped - Horizontal lines
+7. Invaders - Space invader patterns
+8. Heart - Heart shape
+9. Castle - Castle with solid turrets
+10. Final Boss - Hard brick fortress
 
 ## Architecture
 
@@ -134,6 +184,7 @@ internal/
   games/
     flappy/       # Flappy Bird implementation
     dino/         # Dino Runner implementation
+    breakout/     # Breakout implementation (10 levels, power-ups)
     pong/         # Pong implementation (CPU & Online modes)
 ```
 

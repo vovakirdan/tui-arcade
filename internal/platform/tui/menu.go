@@ -30,6 +30,7 @@ type MenuModel struct {
 	keyMapper *KeyMapper
 	quitting  bool
 	selected  *MenuItem // Set when user selects a game
+	showStats bool      // Toggle stats view with Tab
 }
 
 // NewMenuModel creates a new menu model.
@@ -85,6 +86,12 @@ func (m MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKey processes keyboard input for menu navigation.
 func (m MenuModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle Tab for stats toggle
+	if msg.String() == "tab" {
+		m.showStats = !m.showStats
+		return m, nil
+	}
+
 	action := m.keyMapper.MapKeyToMenuAction(msg)
 
 	switch action {
@@ -103,7 +110,7 @@ func (m MenuModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case MenuActionSelect:
-		if len(m.items) > 0 {
+		if len(m.items) > 0 && !m.showStats {
 			selected := m.items[m.cursor]
 			m.selected = &selected
 			return m, tea.Quit // Exit menu to start game
@@ -127,6 +134,11 @@ func (m MenuModel) View() string {
 	b.WriteString("\n")
 	b.WriteString(titleLine)
 	b.WriteString("\n\n")
+
+	if m.showStats {
+		// Stats view
+		return m.renderStatsView(&b)
+	}
 
 	// Subtitle
 	subtitle := "Select a game"
@@ -153,7 +165,62 @@ func (m MenuModel) View() string {
 
 	// Footer with controls
 	b.WriteString("\n")
-	controls := "Up/Down: Navigate  |  Enter: Select  |  Q: Quit"
+	controls := "Up/Down: Navigate  |  Enter: Select  |  Tab: Stats  |  Q: Quit"
+	b.WriteString(centerText(controls, m.width))
+	b.WriteString("\n")
+
+	return b.String()
+}
+
+// renderStatsView renders the statistics panel.
+func (m MenuModel) renderStatsView(b *strings.Builder) string {
+	subtitle := "Game Statistics"
+	b.WriteString(centerText(subtitle, m.width))
+	b.WriteString("\n\n")
+
+	// Get stats for all games
+	allStats, err := m.store.GetAllGamesStats()
+	if err != nil {
+		b.WriteString(centerText("Error loading stats", m.width))
+		b.WriteString("\n")
+	} else {
+		// Render stats for each game
+		for _, item := range m.items {
+			stats := allStats[item.GameID]
+
+			// Game title with box
+			gameHeader := fmt.Sprintf("[ %s ]", item.Title)
+			b.WriteString(centerText(gameHeader, m.width))
+			b.WriteString("\n")
+
+			if stats == nil || stats.GamesCount == 0 {
+				b.WriteString(centerText("No games played yet", m.width))
+				b.WriteString("\n\n")
+				continue
+			}
+
+			// Stats lines
+			lines := []string{
+				fmt.Sprintf("Games Played: %d", stats.GamesCount),
+				fmt.Sprintf("High Score:   %d", stats.HighScore),
+				fmt.Sprintf("Average:      %.0f", stats.AvgScore),
+				fmt.Sprintf("Total Score:  %d", stats.TotalScore),
+			}
+
+			if !stats.LastPlayed.IsZero() {
+				lines = append(lines, fmt.Sprintf("Last Played:  %s", stats.LastPlayed.Format("Jan 02, 15:04")))
+			}
+
+			for _, line := range lines {
+				b.WriteString(centerText(line, m.width))
+				b.WriteString("\n")
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	// Footer
+	controls := "Tab: Back to Menu  |  Q: Quit"
 	b.WriteString(centerText(controls, m.width))
 	b.WriteString("\n")
 

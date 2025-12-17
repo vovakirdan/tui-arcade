@@ -487,3 +487,85 @@ func (s *Store) SaveMatchResult(data multiplayer.MatchResultData) error {
 
 // Ensure Store implements MatchResultSaver
 var _ multiplayer.MatchResultSaver = (*Store)(nil)
+
+// GameStats contains aggregated statistics for a game.
+type GameStats struct {
+	GameID     string
+	GamesCount int
+	HighScore  int
+	AvgScore   float64
+	TotalScore int64
+	LastPlayed time.Time
+}
+
+// GetGameStats retrieves aggregated statistics for a specific game.
+func (s *Store) GetGameStats(gameID string) (*GameStats, error) {
+	stats := &GameStats{GameID: gameID}
+
+	// Get count, high, avg, total
+	err := s.db.QueryRow(
+		`SELECT COUNT(*), COALESCE(MAX(score), 0), COALESCE(AVG(score), 0), COALESCE(SUM(score), 0)
+		 FROM scores WHERE game_id = ?`,
+		gameID,
+	).Scan(&stats.GamesCount, &stats.HighScore, &stats.AvgScore, &stats.TotalScore)
+	if err != nil {
+		return nil, fmt.Errorf("storage: cannot get game stats: %w", err)
+	}
+
+	// Get last played
+	var lastPlayed any
+	err = s.db.QueryRow(
+		`SELECT created_at FROM scores WHERE game_id = ? ORDER BY created_at DESC LIMIT 1`,
+		gameID,
+	).Scan(&lastPlayed)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("storage: cannot get last played: %w", err)
+	}
+	if err == nil {
+		switch v := lastPlayed.(type) {
+		case time.Time:
+			stats.LastPlayed = v
+		case string:
+			if parsed, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
+				stats.LastPlayed = parsed
+			}
+		}
+	}
+
+	return stats, nil
+}
+
+// GetAllGamesStats retrieves statistics for all games that have been played.
+func (s *Store) GetAllGamesStats() (map[string]*GameStats, error) {
+	rows, err := s.db.Query(
+		`SELECT game_id, COUNT(*), MAX(score), AVG(score), SUM(score), MAX(created_at)
+		 FROM scores
+		 GROUP BY game_id`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("storage: cannot get all games stats: %w", err)
+	}
+	defer rows.Close()
+
+	stats := make(map[string]*GameStats)
+	for rows.Next() {
+		var s GameStats
+		var lastPlayed any
+		if err := rows.Scan(&s.GameID, &s.GamesCount, &s.HighScore, &s.AvgScore, &s.TotalScore, &lastPlayed); err != nil {
+			return nil, fmt.Errorf("storage: cannot scan stats row: %w", err)
+		}
+
+		switch v := lastPlayed.(type) {
+		case time.Time:
+			s.LastPlayed = v
+		case string:
+			if parsed, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
+				s.LastPlayed = parsed
+			}
+		}
+
+		stats[s.GameID] = &s
+	}
+
+	return stats, nil
+}

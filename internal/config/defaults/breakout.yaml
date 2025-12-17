@@ -3,7 +3,7 @@
 
 physics:
   ball_speed: 300        # Ball speed (units per tick, scaled by 1000)
-  paddle_speed: 500      # Paddle speed (units per tick, scaled by 1000)
+  paddle_speed: 2000      # Paddle speed (units per tick, scaled by 1000)
   max_ball_speed: 1000   # Maximum ball speed
 
 paddle:

@@ -14,10 +14,10 @@ var defaultDinoYAML []byte
 func DefaultFlappyConfig() FlappyConfig {
 	return FlappyConfig{
 		Physics: FlappyPhysics{
-			Gravity:      0.3,
-			JumpImpulse:  -5.0,
-			MaxFallSpeed: 8.0,
-			BaseSpeed:    1.0,
+			Gravity:      0.25,
+			JumpImpulse:  -1.8,
+			MaxFallSpeed: 3.0,
+			BaseSpeed:    0.8,
 		},
 		Obstacles: FlappyObstacles{
 			PipeWidth:    5,
@@ -52,10 +52,10 @@ func DefaultFlappyConfig() FlappyConfig {
 func DefaultDinoConfig() DinoConfig {
 	return DinoConfig{
 		Physics: DinoPhysics{
-			Gravity:      0.5,
-			JumpImpulse:  -9.0,
-			MaxFallSpeed: 12.0,
-			BaseSpeed:    1.0,
+			Gravity:      0.3,
+			JumpImpulse:  -2.5,
+			MaxFallSpeed: 4.0,
+			BaseSpeed:    0.5,
 		},
 		Obstacles: DinoObstacles{
 			MinWidth:   1,

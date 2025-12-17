@@ -2,10 +2,10 @@
 # Edit these values to customize gameplay
 
 physics:
-  gravity: 0.5           # Downward acceleration per tick
-  jump_impulse: -9.0     # Upward velocity on jump (negative = up)
-  max_fall_speed: 12.0   # Terminal velocity
-  base_speed: 1.0        # Scroll speed at easy difficulty
+  gravity: 0.3           # Downward acceleration per tick
+  jump_impulse: -3.0     # Upward velocity on jump (negative = up)
+  max_fall_speed: 4.0    # Terminal velocity
+  base_speed: 0.5        # Scroll speed at easy difficulty
 
 obstacles:
   min_width: 1           # Minimum cactus width
@@ -22,7 +22,7 @@ player:
   ground_offset: 2       # Ground position from bottom
 
 difficulty:
-  enabled: true          # Enable progressive difficulty (false = fixed)
+  enabled: false          # Enable progressive difficulty (false = fixed)
   initial_level: 0.0     # Starting difficulty (0.0=easy, 0.5=medium, 1.0=hard)
   progression:
     type: "score"        # "score", "time", or "none"

@@ -9,9 +9,9 @@ import (
 )
 
 // LoadFlappy loads Flappy Bird configuration.
-// Search order: customPath -> ~/.arcade/configs/flappy.yaml -> embedded default
+// Search order: customPath -> ~/.arcade/configs/flappy.yaml -> ./configs/flappy.yaml -> embedded default
 func LoadFlappy(customPath string) (FlappyConfig, error) {
-	cfg := DefaultFlappyConfig()
+	var cfg FlappyConfig
 
 	// Try custom path first
 	if customPath != "" {
@@ -41,14 +41,17 @@ func LoadFlappy(customPath string) (FlappyConfig, error) {
 		}
 	}
 
-	// Use embedded default (already in cfg)
+	// Use embedded default YAML
+	if err := yaml.Unmarshal(defaultFlappyYAML, &cfg); err != nil {
+		return DefaultFlappyConfig(), nil // Fallback to hardcoded if embed fails
+	}
 	return cfg, nil
 }
 
 // LoadDino loads Dino Runner configuration.
-// Search order: customPath -> ~/.arcade/configs/dino.yaml -> embedded default
+// Search order: customPath -> ~/.arcade/configs/dino.yaml -> ./configs/dino.yaml -> embedded default
 func LoadDino(customPath string) (DinoConfig, error) {
-	cfg := DefaultDinoConfig()
+	var cfg DinoConfig
 
 	// Try custom path first
 	if customPath != "" {
@@ -78,7 +81,10 @@ func LoadDino(customPath string) (DinoConfig, error) {
 		}
 	}
 
-	// Use embedded default (already in cfg)
+	// Use embedded default YAML
+	if err := yaml.Unmarshal(defaultDinoYAML, &cfg); err != nil {
+		return DefaultDinoConfig(), nil // Fallback to hardcoded if embed fails
+	}
 	return cfg, nil
 }
 

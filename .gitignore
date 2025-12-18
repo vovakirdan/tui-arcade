@@ -1,5 +1,6 @@
 # Binaries
 arcade
+!cmd/arcade
 *.exe
 
 # Database files

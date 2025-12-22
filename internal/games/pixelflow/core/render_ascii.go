@@ -28,7 +28,7 @@ func RenderASCII(s *State) string {
 
 	// Header
 	sb.WriteString(fmt.Sprintf("Tick: %d | Pixels: %d | Active: %d/%d | Deck: %d | Waiting: %d\n",
-		s.Tick, s.Grid.FilledCount(), len(s.Active), s.Capacity, len(s.Deck), len(s.Waiting)))
+		s.Tick, s.Grid.FilledCount(), len(s.Active), s.Capacity, s.Deck.TotalShooters(), s.Waiting.Count()))
 	sb.WriteString(strings.Repeat("-", displayW+10) + "\n")
 
 	// Build the display grid
@@ -40,34 +40,40 @@ func RenderASCII(s *State) string {
 		sb.WriteString("\n")
 	}
 
-	// Footer: Deck preview
+	// Footer: Deck preview (show queues)
 	sb.WriteString(strings.Repeat("-", displayW+10) + "\n")
-	sb.WriteString("Deck: ")
-	maxShow := 5
-	for i, shooter := range s.Deck {
-		if i >= maxShow {
-			sb.WriteString(fmt.Sprintf("... +%d more", len(s.Deck)-maxShow))
-			break
+	for qi, queue := range s.Deck.Queues {
+		sb.WriteString(fmt.Sprintf("Q%d: ", qi))
+		maxShow := 5
+		for i, shooter := range queue {
+			if i >= maxShow {
+				sb.WriteString(fmt.Sprintf("... +%d more", len(queue)-maxShow))
+				break
+			}
+			if i > 0 {
+				sb.WriteString(" ")
+			}
+			sb.WriteString(fmt.Sprintf("%c(%d)", shooter.Color.LowerChar(), shooter.Ammo))
 		}
-		if i > 0 {
-			sb.WriteString(" ")
+		if len(queue) == 0 {
+			sb.WriteString("(empty)")
 		}
-		sb.WriteString(fmt.Sprintf("%c(%d)", shooter.Color.LowerChar(), shooter.Ammo))
+		sb.WriteString("\n")
 	}
-	if len(s.Deck) == 0 {
-		sb.WriteString("(empty)")
-	}
-	sb.WriteString("\n")
 
 	// Waiting slots
 	sb.WriteString("Wait: ")
-	for i, shooter := range s.Waiting {
-		if i > 0 {
-			sb.WriteString(" ")
+	hasAny := false
+	for i, shooter := range s.Waiting.Slots {
+		if shooter != nil {
+			if hasAny {
+				sb.WriteString(" ")
+			}
+			sb.WriteString(fmt.Sprintf("[%d]%c(%d)", i, shooter.Color.LowerChar(), shooter.Ammo))
+			hasAny = true
 		}
-		sb.WriteString(fmt.Sprintf("%c(%d)", shooter.Color.LowerChar(), shooter.Ammo))
 	}
-	if len(s.Waiting) == 0 {
+	if !hasAny {
 		sb.WriteString("(empty)")
 	}
 	sb.WriteString("\n")

@@ -5,11 +5,20 @@ import (
 	"math/rand"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	platformcore "github.com/vovakirdan/tui-arcade/internal/core"
 	"github.com/vovakirdan/tui-arcade/internal/games/pixelflow/core"
 	"github.com/vovakirdan/tui-arcade/internal/games/pixelflow/levels"
 	"github.com/vovakirdan/tui-arcade/internal/registry"
+)
+
+// FocusArea indicates which area has input focus.
+type FocusArea int
+
+const (
+	FocusDeck FocusArea = iota
+	FocusWaiting
 )
 
 // Game implements the PixelFlow puzzle game.
@@ -36,10 +45,20 @@ type Game struct {
 	tooSmall     bool
 	autoTickRate int // Ticks between auto simulation steps
 
-	// Rendering offsets
+	// Selection state
+	focus         FocusArea // Current focus (deck or waiting)
+	selectedQueue int       // Selected deck queue index
+	selectedSlot  int       // Selected waiting slot index
+
+	// Rendering config
+	cellW      int // Width of each grid cell in terminal chars
+	cellH      int // Height of each grid cell in terminal lines
+	railOffset int // Gap between grid and rail
+	hudHeight  int
+
+	// Calculated offsets
 	gridOffsetX int
 	gridOffsetY int
-	hudHeight   int
 }
 
 // Package-level variables for configuration
@@ -66,8 +85,11 @@ func init() {
 // New creates a new PixelFlow game.
 func New() *Game {
 	return &Game{
-		hudHeight:    3,
-		autoTickRate: 6, // Auto-step every 6 ticks (~10 steps/sec at 60 FPS)
+		hudHeight:    4,
+		autoTickRate: 6,  // Auto-step every 6 ticks (~10 steps/sec at 60 FPS)
+		cellW:        2,  // Each pixel is 2 chars wide
+		cellH:        1,  // Each pixel is 1 line tall
+		railOffset:   1,  // 1 cell gap between grid and rail
 	}
 }
 
@@ -101,6 +123,9 @@ func (g *Game) Reset(cfg platformcore.RuntimeConfig) {
 	g.gameOver = false
 	g.won = false
 	g.paused = false
+	g.focus = FocusDeck
+	g.selectedQueue = 0
+	g.selectedSlot = 0
 
 	// Load levels
 	g.loader = levels.NewLoader(getLevelsPath())
@@ -132,14 +157,12 @@ func (g *Game) loadCurrentLevel() {
 
 	g.level = g.allLevels[g.levelIndex]
 
-	// Check minimum size
-	minW := g.level.Width + 4  // Grid + rail + border
-	minH := g.level.Height + 6 // Grid + rail + HUD + status
-	if g.screenW < minW || g.screenH < minH {
-		g.tooSmall = true
+	// Calculate cell dimensions based on available space
+	g.calculateLayout()
+
+	if g.tooSmall {
 		return
 	}
-	g.tooSmall = false
 
 	// Generate a deck for this level
 	deck := g.generateDeck()
@@ -147,11 +170,55 @@ func (g *Game) loadCurrentLevel() {
 	// Create game state
 	g.state = g.level.NewState(deck)
 
-	// Calculate grid offset to center it
-	displayW := g.level.Width + 2 // Grid + rail borders
-	displayH := g.level.Height + 2
+	// Reset selection
+	g.focus = FocusDeck
+	g.selectedQueue = 0
+	g.selectedSlot = 0
+}
+
+// calculateLayout determines cell sizes and offsets.
+func (g *Game) calculateLayout() {
+	// Available space after HUD and status areas
+	availW := g.screenW - 4  // margins
+	availH := g.screenH - g.hudHeight - 6 // HUD + deck display + margins
+
+	// Grid dimensions with rail offset
+	gridDisplayW := g.level.Width
+	gridDisplayH := g.level.Height
+
+	// Calculate maximum cell size that fits
+	// Need space for: rail + offset + grid + offset + rail
+	// Rail is 1 cell wide, offset is railOffset cells
+	totalGridW := gridDisplayW + 2*(1+g.railOffset)
+	totalGridH := gridDisplayH + 2*(1+g.railOffset)
+
+	// Calculate cell dimensions
+	g.cellW = availW / totalGridW
+	g.cellH = availH / totalGridH
+
+	// Enforce minimums
+	if g.cellW < 2 {
+		g.cellW = 2
+	}
+	if g.cellH < 1 {
+		g.cellH = 1
+	}
+
+	// Check if we have enough space
+	neededW := totalGridW * g.cellW
+	neededH := totalGridH * g.cellH + g.hudHeight + 4
+
+	if g.screenW < neededW || g.screenH < neededH {
+		g.tooSmall = true
+		return
+	}
+	g.tooSmall = false
+
+	// Center the grid display
+	displayW := totalGridW * g.cellW
+	displayH := totalGridH * g.cellH
 	g.gridOffsetX = (g.screenW - displayW) / 2
-	g.gridOffsetY = g.hudHeight + (g.screenH-g.hudHeight-displayH)/2
+	g.gridOffsetY = g.hudHeight + (g.screenH - g.hudHeight - displayH - 4) / 2
 }
 
 // generateDeck creates a solvable deck for the current level.
@@ -163,6 +230,7 @@ func (g *Game) generateDeck() []core.Shooter {
 	params := core.DefaultGenParams()
 	params.Seed = uint64(g.rng.Int63())
 	params.Capacity = g.level.Capacity
+	params.NumQueues = g.level.NumQueues
 	params.MaxAmmoPerShooter = 4
 
 	deck, err := core.GenerateDeckForGrid(grid, rail, params)
@@ -197,18 +265,49 @@ func (g *Game) Step(input platformcore.InputFrame) platformcore.StepResult {
 		return platformcore.StepResult{State: g.State()}
 	}
 
+	// Handle selection navigation
+	if input.Has(platformcore.ActionUp) {
+		g.focus = FocusDeck
+	}
+	if input.Has(platformcore.ActionDown) {
+		g.focus = FocusWaiting
+	}
+	if input.Has(platformcore.ActionLeft) {
+		if g.focus == FocusDeck {
+			if g.selectedQueue > 0 {
+				g.selectedQueue--
+			}
+		} else {
+			if g.selectedSlot > 0 {
+				g.selectedSlot--
+			}
+		}
+	}
+	if input.Has(platformcore.ActionRight) {
+		if g.focus == FocusDeck {
+			if g.selectedQueue < g.state.NumQueues-1 {
+				g.selectedQueue++
+			}
+		} else {
+			if g.selectedSlot < g.state.Waiting.Capacity-1 {
+				g.selectedSlot++
+			}
+		}
+	}
+
 	// Handle manual launch with Space/Confirm
 	if input.Has(platformcore.ActionConfirm) || input.Has(platformcore.ActionJump) {
-		g.state.AutoLaunch()
+		if g.focus == FocusDeck {
+			g.state.LaunchFromQueue(g.selectedQueue)
+		} else {
+			g.state.LaunchFromWaiting(g.selectedSlot)
+		}
 	}
 
 	// Auto-step simulation while there are active shooters
 	if len(g.state.Active) > 0 && g.tick%uint64(g.autoTickRate) == 0 {
 		result := g.state.StepTick()
 		g.score += len(result.Removed) * 10
-
-		// Auto-launch when possible
-		g.state.AutoLaunch()
 	}
 
 	// Check win/lose conditions
@@ -245,11 +344,11 @@ func (g *Game) Render(dst *platformcore.Screen) {
 		return
 	}
 
-	// Draw game grid with rail
-	g.renderGrid(dst)
+	// Draw game grid with rail (scaled colored blocks)
+	g.renderScaledGrid(dst)
 
-	// Draw deck preview
-	g.renderDeck(dst)
+	// Draw deck queues and waiting slots
+	g.renderQueuesAndSlots(dst)
 
 	// Draw overlays
 	switch {
@@ -282,12 +381,22 @@ func (g *Game) renderHUD(dst *platformcore.Screen) {
 	}
 
 	// Controls hint
-	controls := " Space: Launch | P: Pause | R: Restart | Q: Quit"
+	var controls string
+	if g.focus == FocusDeck {
+		controls = " [DECK] ←/→: Queue | ↑/↓: Focus | Space: Launch | P: Pause"
+	} else {
+		controls = " [WAIT] ←/→: Slot | ↑/↓: Focus | Space: Launch | P: Pause"
+	}
 	dst.DrawTextWithColor(0, 2, controls, platformcore.ColorGray)
+
+	// Another separator
+	for x := 0; x < dst.Width(); x++ {
+		dst.SetWithColor(x, 3, '─', platformcore.ColorGray)
+	}
 }
 
-// renderGrid draws the pixel grid with rail and shooters.
-func (g *Game) renderGrid(dst *platformcore.Screen) {
+// renderScaledGrid draws the pixel grid with colored blocks and rail.
+func (g *Game) renderScaledGrid(dst *platformcore.Screen) {
 	if g.state == nil {
 		return
 	}
@@ -298,87 +407,166 @@ func (g *Game) renderGrid(dst *platformcore.Screen) {
 		activeByRail[a.RailIndex] = a
 	}
 
-	displayW := g.state.Grid.W + 2
-	displayH := g.state.Grid.H + 2
+	// Total display dimensions including rail and offset
+	railAndOffset := 1 + g.railOffset
+	totalW := g.state.Grid.W + 2*railAndOffset
+	totalH := g.state.Grid.H + 2*railAndOffset
 
-	for dy := 0; dy < displayH; dy++ {
-		for dx := 0; dx < displayW; dx++ {
-			screenX := g.gridOffsetX + dx
-			screenY := g.gridOffsetY + dy
+	// Draw each cell
+	for dy := 0; dy < totalH; dy++ {
+		for dx := 0; dx < totalW; dx++ {
+			// Screen position for this cell
+			screenX := g.gridOffsetX + dx*g.cellW
+			screenY := g.gridOffsetY + dy*g.cellH
 
-			if screenX < 0 || screenX >= dst.Width() || screenY < 0 || screenY >= dst.Height() {
-				continue
-			}
+			// Grid coordinates (accounting for rail and offset)
+			gx := dx - railAndOffset
+			gy := dy - railAndOffset
 
-			// Grid coordinates
-			gx := dx - 1
-			gy := dy - 1
+			// Determine what to draw
+			isRail := (dx == 0 || dx == totalW-1 || dy == 0 || dy == totalH-1)
+			isOffset := !isRail && (dx < railAndOffset || dx >= totalW-railAndOffset ||
+				dy < railAndOffset || dy >= totalH-railAndOffset)
+			isGrid := !isRail && !isOffset
 
-			// Check if this is a rail position (border)
-			if dx == 0 || dx == g.state.Grid.W+1 || dy == 0 || dy == g.state.Grid.H+1 {
-				railIdx := g.displayToRailIndex(dx, dy)
+			if isRail {
+				// Rail position
+				railIdx := g.displayToRailIndex(dx, dy, totalW, totalH, railAndOffset)
 				if railIdx >= 0 {
 					if shooter, ok := activeByRail[railIdx]; ok {
 						// Active shooter on rail
-						char, color := g.shooterRune(shooter)
-						dst.SetWithColor(screenX, screenY, char, color)
+						g.renderRailShooter(dst, screenX, screenY, shooter)
 					} else {
-						dst.SetWithColor(screenX, screenY, '·', platformcore.ColorGray)
+						// Empty rail
+						g.renderRailEmpty(dst, screenX, screenY)
 					}
 				} else {
-					dst.SetWithColor(screenX, screenY, '+', platformcore.ColorGray)
+					// Corner
+					g.renderRailCorner(dst, screenX, screenY)
 				}
-			} else if gx >= 0 && gx < g.state.Grid.W && gy >= 0 && gy < g.state.Grid.H {
-				// Inside grid
+			} else if isOffset {
+				// Offset area (empty space between rail and grid)
+				g.renderEmpty(dst, screenX, screenY)
+			} else if isGrid && gx >= 0 && gx < g.state.Grid.W && gy >= 0 && gy < g.state.Grid.H {
+				// Grid cell
 				cell := g.state.Grid.Get(core.C(gx, gy))
 				if cell.Filled {
-					char := cell.Color.Char()
-					color := g.pixelflowColorToCore(cell.Color)
-					dst.SetWithColor(screenX, screenY, char, color)
+					g.renderPixelBlock(dst, screenX, screenY, cell.Color)
 				} else {
-					dst.SetWithColor(screenX, screenY, '.', platformcore.ColorGray)
+					g.renderEmptyCell(dst, screenX, screenY)
 				}
 			}
 		}
 	}
 }
 
-// shooterRune returns the character and color for an active shooter.
-func (g *Game) shooterRune(shooter core.ActiveShooter) (rune, platformcore.Color) {
-	char := shooter.Color.LowerChar()
-	if shooter.Dry {
-		char = 'x' // Dry shooters show as 'x'
+// renderPixelBlock draws a colored block for a pixel.
+func (g *Game) renderPixelBlock(dst *platformcore.Screen, x, y int, c core.Color) {
+	color := g.pixelflowColorToCore(c)
+	// Draw block as colored spaces (background color)
+	blockChar := '█' // Full block character
+	for cy := 0; cy < g.cellH; cy++ {
+		for cx := 0; cx < g.cellW; cx++ {
+			if x+cx >= 0 && x+cx < dst.Width() && y+cy >= 0 && y+cy < dst.Height() {
+				dst.SetWithColor(x+cx, y+cy, blockChar, color)
+			}
+		}
 	}
+}
+
+// renderEmptyCell draws an empty grid cell.
+func (g *Game) renderEmptyCell(dst *platformcore.Screen, x, y int) {
+	for cy := 0; cy < g.cellH; cy++ {
+		for cx := 0; cx < g.cellW; cx++ {
+			if x+cx >= 0 && x+cx < dst.Width() && y+cy >= 0 && y+cy < dst.Height() {
+				dst.SetWithColor(x+cx, y+cy, '·', platformcore.ColorGray)
+			}
+		}
+	}
+}
+
+// renderEmpty draws empty space.
+func (g *Game) renderEmpty(dst *platformcore.Screen, x, y int) {
+	for cy := 0; cy < g.cellH; cy++ {
+		for cx := 0; cx < g.cellW; cx++ {
+			if x+cx >= 0 && x+cx < dst.Width() && y+cy >= 0 && y+cy < dst.Height() {
+				dst.Set(x+cx, y+cy, ' ')
+			}
+		}
+	}
+}
+
+// renderRailEmpty draws an empty rail position.
+func (g *Game) renderRailEmpty(dst *platformcore.Screen, x, y int) {
+	for cy := 0; cy < g.cellH; cy++ {
+		for cx := 0; cx < g.cellW; cx++ {
+			if x+cx >= 0 && x+cx < dst.Width() && y+cy >= 0 && y+cy < dst.Height() {
+				dst.SetWithColor(x+cx, y+cy, '░', platformcore.ColorGray)
+			}
+		}
+	}
+}
+
+// renderRailCorner draws a rail corner.
+func (g *Game) renderRailCorner(dst *platformcore.Screen, x, y int) {
+	for cy := 0; cy < g.cellH; cy++ {
+		for cx := 0; cx < g.cellW; cx++ {
+			if x+cx >= 0 && x+cx < dst.Width() && y+cy >= 0 && y+cy < dst.Height() {
+				dst.SetWithColor(x+cx, y+cy, '╬', platformcore.ColorGray)
+			}
+		}
+	}
+}
+
+// renderRailShooter draws a shooter on the rail.
+func (g *Game) renderRailShooter(dst *platformcore.Screen, x, y int, shooter core.ActiveShooter) {
 	color := g.pixelflowColorToCore(shooter.Color)
-	return char, color
+	char := '●'
+	if shooter.Dry {
+		char = '○'
+	}
+	for cy := 0; cy < g.cellH; cy++ {
+		for cx := 0; cx < g.cellW; cx++ {
+			if x+cx >= 0 && x+cx < dst.Width() && y+cy >= 0 && y+cy < dst.Height() {
+				dst.SetWithColor(x+cx, y+cy, char, color)
+			}
+		}
+	}
 }
 
 // displayToRailIndex converts display coordinates to rail index.
-func (g *Game) displayToRailIndex(dx, dy int) int {
+func (g *Game) displayToRailIndex(dx, dy, totalW, totalH, railAndOffset int) int {
 	w := g.state.Grid.W
 	h := g.state.Grid.H
 
-	// Top edge (dy=0, dx=1 to w)
-	if dy == 0 && dx >= 1 && dx <= w {
-		return dx - 1
+	// Only outer border is rail
+	if dy == 0 {
+		// Top edge
+		gridX := dx - railAndOffset
+		if gridX >= 0 && gridX < w {
+			return gridX
+		}
+	} else if dx == totalW-1 {
+		// Right edge
+		gridY := dy - railAndOffset
+		if gridY >= 0 && gridY < h {
+			return w + gridY
+		}
+	} else if dy == totalH-1 {
+		// Bottom edge (reversed)
+		gridX := dx - railAndOffset
+		if gridX >= 0 && gridX < w {
+			return w + h + (w - 1 - gridX)
+		}
+	} else if dx == 0 {
+		// Left edge (reversed)
+		gridY := dy - railAndOffset
+		if gridY >= 0 && gridY < h {
+			return 2*w + h + (h - 1 - gridY)
+		}
 	}
 
-	// Right edge (dx=w+1, dy=1 to h)
-	if dx == w+1 && dy >= 1 && dy <= h {
-		return w + (dy - 1)
-	}
-
-	// Bottom edge (dy=h+1, dx=w to 1) - reversed
-	if dy == h+1 && dx >= 1 && dx <= w {
-		return w + h + (w - dx)
-	}
-
-	// Left edge (dx=0, dy=h to 1) - reversed
-	if dx == 0 && dy >= 1 && dy <= h {
-		return 2*w + h + (h - dy)
-	}
-
-	return -1 // Corner
+	return -1 // Corner or invalid
 }
 
 // pixelflowColorToCore maps pixelflow colors to platform core colors.
@@ -399,50 +587,74 @@ func (g *Game) pixelflowColorToCore(c core.Color) platformcore.Color {
 	}
 }
 
-// renderDeck draws the deck preview below the grid.
-func (g *Game) renderDeck(dst *platformcore.Screen) {
+// renderQueuesAndSlots draws the deck queues and waiting slots.
+func (g *Game) renderQueuesAndSlots(dst *platformcore.Screen) {
 	if g.state == nil {
 		return
 	}
 
-	deckY := g.gridOffsetY + g.state.Grid.H + 3
-	if deckY >= dst.Height()-1 {
-		return
-	}
+	// Calculate Y position for queues area
+	railAndOffset := 1 + g.railOffset
+	totalH := g.state.Grid.H + 2*railAndOffset
+	baseY := g.gridOffsetY + totalH*g.cellH + 1
 
-	dst.DrawTextWithColor(1, deckY, "Deck: ", platformcore.ColorGray)
+	// Draw deck queues
+	dst.DrawTextWithColor(1, baseY, "Queues:", platformcore.ColorGray)
+	queueY := baseY + 1
 
-	x := 7
-	for i, shooter := range g.state.Deck {
-		if i >= 8 {
-			dst.DrawTextWithColor(x, deckY, "...", platformcore.ColorGray)
+	for qi := 0; qi < g.state.Deck.NumQueues(); qi++ {
+		x := 2 + qi*12
+		if x >= dst.Width()-10 {
 			break
 		}
-		char := shooter.Color.LowerChar()
-		color := g.pixelflowColorToCore(shooter.Color)
-		dst.SetWithColor(x, deckY, char, color)
-		x++
-		// Show ammo count
-		ammoStr := itoa(shooter.Ammo)
-		dst.DrawText(x, deckY, ammoStr)
-		x += len(ammoStr) + 1
+
+		// Queue header with selection indicator
+		header := "Q" + itoa(qi+1) + ":"
+		if g.focus == FocusDeck && qi == g.selectedQueue {
+			header = "[" + header + "]"
+			dst.DrawTextWithColor(x-1, queueY, header, platformcore.ColorBrightYellow)
+		} else {
+			dst.DrawTextWithColor(x, queueY, header, platformcore.ColorGray)
+		}
+
+		// Show top 3 shooters in queue
+		for si := 0; si < 3 && si < g.state.Deck.QueueLen(qi); si++ {
+			shooter := g.state.Deck.Queues[qi][si]
+			char := shooter.Color.LowerChar()
+			color := g.pixelflowColorToCore(shooter.Color)
+			dst.SetWithColor(x+4+si*3, queueY, char, color)
+			dst.DrawText(x+5+si*3, queueY, itoa(shooter.Ammo))
+		}
+		if g.state.Deck.QueueLen(qi) > 3 {
+			dst.DrawTextWithColor(x+13, queueY, "...", platformcore.ColorGray)
+		}
 	}
 
-	// Show waiting shooters
-	if len(g.state.Waiting) > 0 {
-		waitY := deckY + 1
-		if waitY < dst.Height() {
-			dst.DrawTextWithColor(1, waitY, "Wait: ", platformcore.ColorGray)
-			x = 7
-			for _, shooter := range g.state.Waiting {
-				char := shooter.Color.LowerChar()
-				color := g.pixelflowColorToCore(shooter.Color)
-				dst.SetWithColor(x, waitY, char, color)
-				x++
-				ammoStr := itoa(shooter.Ammo)
-				dst.DrawText(x, waitY, ammoStr)
-				x += len(ammoStr) + 1
-			}
+	// Draw waiting slots
+	waitY := queueY + 2
+	dst.DrawTextWithColor(1, waitY, "Waiting:", platformcore.ColorGray)
+	slotY := waitY + 1
+
+	for si := 0; si < g.state.Waiting.Capacity; si++ {
+		x := 2 + si*6
+		if x >= dst.Width()-5 {
+			break
+		}
+
+		slot := g.state.Waiting.Get(si)
+		// Slot indicator
+		if g.focus == FocusWaiting && si == g.selectedSlot {
+			dst.DrawTextWithColor(x-1, slotY, "[", platformcore.ColorBrightYellow)
+			dst.DrawTextWithColor(x+4, slotY, "]", platformcore.ColorBrightYellow)
+		}
+
+		if slot != nil {
+			char := slot.Color.LowerChar()
+			color := g.pixelflowColorToCore(slot.Color)
+			dst.SetWithColor(x, slotY, char, color)
+			dst.DrawText(x+1, slotY, itoa(slot.Ammo))
+		} else {
+			dst.DrawTextWithColor(x, slotY, "___", platformcore.ColorGray)
 		}
 	}
 }
@@ -556,3 +768,6 @@ func itoa(n int) string {
 	}
 	return string(digits)
 }
+
+// Ensure strings package is used
+var _ = strings.Repeat

@@ -186,8 +186,8 @@ func TestLevelNewState(t *testing.T) {
 	if state.Capacity != lvl.Capacity {
 		t.Errorf("state capacity mismatch")
 	}
-	if len(state.Deck) != 1 {
-		t.Errorf("expected 1 shooter in deck")
+	if state.Deck.TotalShooters() != 1 {
+		t.Errorf("expected 1 shooter in deck, got %d", state.Deck.TotalShooters())
 	}
 	if state.Grid.FilledCount() != len(lvl.Pixels) {
 		t.Errorf("grid pixel count mismatch")

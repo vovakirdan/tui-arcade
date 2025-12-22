@@ -15,14 +15,15 @@ import (
 
 // Level represents a complete level definition.
 type Level struct {
-	ID       string
-	Name     string
-	Width    int
-	Height   int
-	Capacity int
-	Pixels   map[core.Coord]core.Color
-	Metadata map[string]string
-	FilePath string
+	ID        string
+	Name      string
+	Width     int
+	Height    int
+	Capacity  int
+	NumQueues int
+	Pixels    map[core.Coord]core.Color
+	Metadata  map[string]string
+	FilePath  string
 }
 
 // ToGrid creates a Grid from the level.
@@ -37,7 +38,7 @@ func (l *Level) ToRail() core.Rail {
 
 // NewState creates a game state from this level with the given deck.
 func (l *Level) NewState(deck []core.Shooter) *core.State {
-	return core.NewState(l.ToGrid(), deck, l.Capacity)
+	return core.NewStateWithQueues(l.ToGrid(), deck, l.Capacity, l.NumQueues)
 }
 
 // Loader handles loading levels from a directory.
@@ -105,14 +106,15 @@ func (l *Loader) LoadFile(path string) (Level, error) {
 	}
 
 	return Level{
-		ID:       parsed.ID,
-		Name:     parsed.Name,
-		Width:    parsed.Width,
-		Height:   parsed.Height,
-		Capacity: parsed.Capacity,
-		Pixels:   parsed.Pixels,
-		Metadata: parsed.Metadata,
-		FilePath: path,
+		ID:        parsed.ID,
+		Name:      parsed.Name,
+		Width:     parsed.Width,
+		Height:    parsed.Height,
+		Capacity:  parsed.Capacity,
+		NumQueues: parsed.NumQueues,
+		Pixels:    parsed.Pixels,
+		Metadata:  parsed.Metadata,
+		FilePath:  path,
 	}, nil
 }
 

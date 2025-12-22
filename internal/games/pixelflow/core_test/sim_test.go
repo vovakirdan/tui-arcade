@@ -181,8 +181,10 @@ func TestEmptyRayDoesNothing(t *testing.T) {
 	}
 
 	// Shooter should still have full ammo
-	if len(state.Waiting) > 0 && state.Waiting[0].Ammo != 5 {
-		t.Errorf("ammo should be unchanged after empty lap, got %d", state.Waiting[0].Ammo)
+	if state.Waiting.Count() > 0 {
+		if w := state.Waiting.Get(0); w != nil && w.Ammo != 5 {
+			t.Errorf("ammo should be unchanged after empty lap, got %d", w.Ammo)
+		}
 	}
 }
 
@@ -209,11 +211,15 @@ func TestLapCompletionParksShooter(t *testing.T) {
 	if len(state.Active) != 0 {
 		t.Errorf("expected 0 active shooters after lap, got %d", len(state.Active))
 	}
-	if len(state.Waiting) != 1 {
-		t.Errorf("expected 1 waiting shooter, got %d", len(state.Waiting))
+	if state.Waiting.Count() != 1 {
+		t.Errorf("expected 1 waiting shooter, got %d", state.Waiting.Count())
 	}
-	if state.Waiting[0].Ammo != 3 {
-		t.Errorf("waiting shooter should have 3 ammo, got %d", state.Waiting[0].Ammo)
+	if w := state.Waiting.Get(0); w == nil || w.Ammo != 3 {
+		ammo := 0
+		if w != nil {
+			ammo = w.Ammo
+		}
+		t.Errorf("waiting shooter should have 3 ammo, got %d", ammo)
 	}
 }
 
@@ -239,8 +245,8 @@ func TestLapCompletionRemovesEmptyShooter(t *testing.T) {
 	if len(state.Active) != 0 {
 		t.Errorf("expected 0 active shooters, got %d", len(state.Active))
 	}
-	if len(state.Waiting) != 0 {
-		t.Errorf("expected 0 waiting shooters (no ammo left), got %d", len(state.Waiting))
+	if state.Waiting.Count() != 0 {
+		t.Errorf("expected 0 waiting shooters (no ammo left), got %d", state.Waiting.Count())
 	}
 }
 

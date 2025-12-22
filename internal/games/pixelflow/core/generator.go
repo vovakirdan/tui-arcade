@@ -7,8 +7,9 @@ import (
 
 // GenParams configures the deck generator behavior.
 type GenParams struct {
-	Capacity int    // Rail capacity (max active shooters)
-	Seed     uint64 // RNG seed for deterministic variety
+	Capacity  int    // Rail capacity (max active shooters)
+	NumQueues int    // Number of deck queues (default 2)
+	Seed      uint64 // RNG seed for deterministic variety
 
 	// Ammo constraints
 	MaxAmmoPerShooter int // Cap per shooter (e.g., 40)
@@ -33,6 +34,7 @@ type GenParams struct {
 func DefaultGenParams() GenParams {
 	return GenParams{
 		Capacity:           5,
+		NumQueues:          2,
 		Seed:               0,
 		MaxAmmoPerShooter:  40,
 		MinAmmoPerShooter:  1,
@@ -249,7 +251,11 @@ func determineAmmo(needed int, p GenParams, rng *SimpleRNG) int {
 
 // validateDeckSolvability runs simulation to verify deck clears the grid.
 func validateDeckSolvability(g *Grid, rail Rail, deck []Shooter, p GenParams) error {
-	state := NewState(g, deck, p.Capacity)
+	numQueues := p.NumQueues
+	if numQueues < 2 {
+		numQueues = 2
+	}
+	state := NewStateWithQueues(g, deck, p.Capacity, numQueues)
 
 	steps, cleared := state.RunUntilIdle(p.MaxSimSteps)
 	if !cleared {

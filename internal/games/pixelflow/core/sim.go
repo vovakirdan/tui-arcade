@@ -27,9 +27,10 @@ type DryEvent struct {
 
 // ShooterExitEvent records when a shooter leaves the rail.
 type ShooterExitEvent struct {
-	ShooterID int
-	ToWaiting bool // true if moved to waiting, false if removed (ammo=0)
-	AmmoLeft  int
+	ShooterID   int
+	ToWaiting   bool // true if moved to waiting, false if removed (ammo=0)
+	WaitingSlot int  // slot index if ToWaiting is true, -1 otherwise
+	AmmoLeft    int
 }
 
 // StepResult contains information about what happened during a simulation step.
@@ -53,7 +54,8 @@ type StepResult struct {
 // After firing, shooter moves to next rail position.
 // If shooter completes a full lap:
 //   - If ammo <= 0: shooter disappears
-//   - If ammo > 0: shooter moves to waiting slot
+//   - If ammo > 0: shooter moves to first available waiting slot
+//   - If no waiting slot available: shooter stays on rail (stops moving/firing)
 func (s *State) StepTick() StepResult {
 	result := StepResult{
 		Tick:          s.Tick,
@@ -62,13 +64,18 @@ func (s *State) StepTick() StepResult {
 		ShooterExited: make([]ShooterExitEvent, 0),
 	}
 
-	// Process each active shooter
-	// We need to track which shooters to remove after processing
+	// Track shooters to remove/waiting after processing
 	toRemove := make([]int, 0)
-	toWaiting := make([]int, 0)
+	toWaiting := make(map[int]int) // shooter index -> waiting slot index
+	stalled := make(map[int]bool)  // shooters waiting for free slot
 
 	for i := range s.Active {
 		shooter := &s.Active[i]
+
+		// Skip stalled shooters (waiting for slot)
+		if stalled[i] {
+			continue
+		}
 
 		// 1. Attempt to fire (if not dry and has ammo)
 		if !shooter.Dry && shooter.Ammo > 0 {
@@ -108,26 +115,34 @@ func (s *State) StepTick() StepResult {
 				// No ammo left: disappear
 				toRemove = append(toRemove, i)
 				result.ShooterExited = append(result.ShooterExited, ShooterExitEvent{
-					ShooterID: shooter.ID,
-					ToWaiting: false,
-					AmmoLeft:  0,
+					ShooterID:   shooter.ID,
+					ToWaiting:   false,
+					WaitingSlot: -1,
+					AmmoLeft:    0,
 				})
 			} else {
-				// Has ammo: move to waiting
-				toWaiting = append(toWaiting, i)
-				result.ShooterExited = append(result.ShooterExited, ShooterExitEvent{
-					ShooterID: shooter.ID,
-					ToWaiting: true,
-					AmmoLeft:  shooter.Ammo,
-				})
+				// Has ammo: try to move to waiting slot
+				slotIdx := s.Waiting.FindFreeSlot()
+				if slotIdx >= 0 {
+					toWaiting[i] = slotIdx
+					result.ShooterExited = append(result.ShooterExited, ShooterExitEvent{
+						ShooterID:   shooter.ID,
+						ToWaiting:   true,
+						WaitingSlot: slotIdx,
+						AmmoLeft:    shooter.Ammo,
+					})
+				} else {
+					// No free slot: stall (keep on rail, stop moving/firing)
+					stalled[i] = true
+					shooter.Dry = true // Mark as dry to prevent further firing
+				}
 			}
 		}
 	}
 
-	// Process exits (in reverse order to maintain indices)
-	// First collect shooters going to waiting
-	for _, i := range toWaiting {
-		s.Waiting = append(s.Waiting, s.Active[i].Shooter)
+	// Process exits: move to waiting slots
+	for shooterIdx, slotIdx := range toWaiting {
+		s.Waiting.Put(slotIdx, s.Active[shooterIdx].Shooter)
 	}
 
 	// Build new active list excluding exited shooters
@@ -135,7 +150,7 @@ func (s *State) StepTick() StepResult {
 	for _, i := range toRemove {
 		exitSet[i] = true
 	}
-	for _, i := range toWaiting {
+	for i := range toWaiting {
 		exitSet[i] = true
 	}
 
@@ -155,15 +170,15 @@ func (s *State) StepTick() StepResult {
 }
 
 // AutoLaunch implements a simple launch policy:
-// 1. If can launch from deck, do it
-// 2. Else if can relaunch from waiting and deck is empty, do it
+// 1. If can launch from deck (any queue), do it from first non-empty queue
+// 2. Else if can relaunch from waiting and all queues empty, do it
 // Returns true if any launch was made.
 func (s *State) AutoLaunch() bool {
 	if s.CanLaunch() {
 		return s.LaunchTop()
 	}
-	// Only relaunch waiting if deck is empty (policy B from spec)
-	if len(s.Deck) == 0 && s.CanRelaunchWaiting() {
+	// Only relaunch waiting if all deck queues are empty
+	if s.Deck.IsEmpty() && s.CanRelaunchWaiting() {
 		return s.RelaunchWaiting()
 	}
 	return false

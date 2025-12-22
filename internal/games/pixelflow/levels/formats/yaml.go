@@ -10,12 +10,13 @@ import (
 
 // YAMLLevel represents the YAML structure for a level file.
 type YAMLLevel struct {
-	ID       string            `yaml:"id"`
-	Name     string            `yaml:"name"`
-	Size     YAMLSize          `yaml:"size"`
-	Capacity int               `yaml:"capacity,omitempty"`
-	Pixels   []YAMLPixel       `yaml:"pixels"`
-	Metadata map[string]string `yaml:"metadata,omitempty"`
+	ID        string            `yaml:"id"`
+	Name      string            `yaml:"name"`
+	Size      YAMLSize          `yaml:"size"`
+	Capacity  int               `yaml:"capacity,omitempty"`
+	NumQueues int               `yaml:"queues,omitempty"`
+	Pixels    []YAMLPixel       `yaml:"pixels"`
+	Metadata  map[string]string `yaml:"metadata,omitempty"`
 }
 
 // YAMLSize represents grid dimensions.
@@ -33,13 +34,14 @@ type YAMLPixel struct {
 
 // Level represents a parsed level ready for use.
 type Level struct {
-	ID       string
-	Name     string
-	Width    int
-	Height   int
-	Capacity int
-	Pixels   map[core.Coord]core.Color
-	Metadata map[string]string
+	ID        string
+	Name      string
+	Width     int
+	Height    int
+	Capacity  int
+	NumQueues int
+	Pixels    map[core.Coord]core.Color
+	Metadata  map[string]string
 }
 
 // ParseYAML parses a YAML level file.
@@ -54,14 +56,20 @@ func ParseYAML(data []byte) (Level, error) {
 		capacity = 5 // Default capacity
 	}
 
+	numQueues := yl.NumQueues
+	if numQueues < 2 {
+		numQueues = 2 // Minimum 2 queues
+	}
+
 	level := Level{
-		ID:       yl.ID,
-		Name:     yl.Name,
-		Width:    yl.Size.W,
-		Height:   yl.Size.H,
-		Capacity: capacity,
-		Pixels:   make(map[core.Coord]core.Color),
-		Metadata: yl.Metadata,
+		ID:        yl.ID,
+		Name:      yl.Name,
+		Width:     yl.Size.W,
+		Height:    yl.Size.H,
+		Capacity:  capacity,
+		NumQueues: numQueues,
+		Pixels:    make(map[core.Coord]core.Color),
+		Metadata:  yl.Metadata,
 	}
 
 	// Parse pixels

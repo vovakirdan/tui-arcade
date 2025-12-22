@@ -124,47 +124,48 @@ func TestShootRemovesMatchingPixel(t *testing.T) {
 	_ = rail
 }
 
-func TestShootBecomesDryOnWrongColor(t *testing.T) {
-	// Put cyan pixels at multiple positions so shooter hits wrong color on 2nd step
+func TestShootSkipsWrongColor(t *testing.T) {
+	// Pink shooter should skip cyan pixels and not shoot them
 	pixels := map[core.Coord]core.Color{
-		core.C(0, 0): core.ColorCyan, // Pink shooter will hit cyan
-		core.C(1, 0): core.ColorCyan, // Also at position 1
+		core.C(0, 0): core.ColorCyan, // Pink shooter sees cyan - should skip
+		core.C(1, 1): core.ColorPink, // Pink shooter should eventually hit this
 	}
 	g := core.NewGrid(3, 3, pixels)
 
-	// Pink shooter
+	// Pink shooter with enough ammo
 	deck := []core.Shooter{{ID: 0, Color: core.ColorPink, Ammo: 5}}
 	state := core.NewState(g, deck, 5)
 
 	state.LaunchTop()
 
-	// First step - shooter at position 0 hits cyan but doesn't become dry
-	// (first lap grace period)
-	result1 := state.StepTick()
-	_ = result1
-
-	// Second step - shooter at position 1 hits cyan, should become dry now
-	// because LapProgress > 0
-	result2 := state.StepTick()
-
-	// Should have a dry event on second step
-	if len(result2.DryEvents) == 0 {
-		t.Error("expected dry event when hitting wrong color after first position")
+	// Step through - shooter should skip cyan and find pink
+	var pinkRemoved bool
+	for i := 0; i < 12; i++ { // Full lap
+		result := state.StepTick()
+		for _, removed := range result.Removed {
+			if removed.Color == core.ColorPink {
+				pinkRemoved = true
+			}
+		}
 	}
 
-	// Shooter should be dry
-	if len(state.Active) > 0 && !state.Active[0].Dry {
-		t.Error("shooter should be marked as dry")
+	// Pink pixel should be removed
+	if !pinkRemoved {
+		t.Error("expected pink pixel to be removed")
 	}
 
-	// Ammo should NOT be spent
-	if len(state.Active) > 0 && state.Active[0].Ammo != 5 {
-		t.Errorf("ammo should be unchanged, got %d", state.Active[0].Ammo)
-	}
-
-	// Pixel should still be there
+	// Cyan pixel should still be there (shooter skipped it)
 	if !state.Grid.Get(core.C(0, 0)).Filled {
-		t.Error("pixel should not be removed when wrong color")
+		t.Error("cyan pixel should not be removed - shooter should skip wrong colors")
+	}
+
+	// Ammo should be reduced by 1 (shot the pink pixel)
+	// Shooter is now in waiting with 4 ammo
+	if state.Waiting.Count() > 0 {
+		w := state.Waiting.Get(0)
+		if w != nil && w.Ammo != 4 {
+			t.Errorf("expected 4 ammo after shooting pink, got %d", w.Ammo)
+		}
 	}
 }
 

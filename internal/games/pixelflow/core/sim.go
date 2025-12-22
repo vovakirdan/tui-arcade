@@ -91,19 +91,9 @@ func (s *State) StepTick() StepResult {
 						Coord:     hitCoord,
 						Color:     hitColor,
 					})
-				} else {
-					// Color mismatch: become dry, but only if not on first lap
-					// This gives shooter a chance to find its pixels on first lap
-					if shooter.LapProgress > 0 {
-						shooter.Dry = true
-					}
-					result.DryEvents = append(result.DryEvents, DryEvent{
-						ShooterID:    shooter.ID,
-						BlockedBy:    hitColor,
-						BlockedCoord: hitCoord,
-						RailIndex:    shooter.RailIndex,
-					})
 				}
+				// Color mismatch: just skip, don't shoot, don't become Dry
+				// Shooter continues around the rail looking for its own color
 			}
 			// If no hit (empty ray): nothing happens, shooter stays not-dry
 		}

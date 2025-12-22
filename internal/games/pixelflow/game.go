@@ -260,6 +260,12 @@ func (g *Game) Step(input platformcore.InputFrame) platformcore.StepResult {
 		g.paused = !g.paused
 	}
 
+	// Handle back button - only when paused to prevent accidental exits
+	if input.Has(platformcore.ActionBack) && g.paused {
+		g.gameOver = true
+		return platformcore.StepResult{State: g.State()}
+	}
+
 	// Don't process if game over, paused, or too small
 	if g.gameOver || g.paused || g.tooSmall || g.state == nil {
 		return platformcore.StepResult{State: g.State()}
@@ -383,7 +389,9 @@ func (g *Game) renderHUD(dst *platformcore.Screen) {
 
 	// Controls hint
 	var controls string
-	if g.focus == FocusDeck {
+	if g.paused {
+		controls = " PAUSED | P: Resume | B: Exit to menu"
+	} else if g.focus == FocusDeck {
 		controls = " [DECK] ←/→: Queue | Tab: Switch | Space: Launch | P: Pause"
 	} else {
 		controls = " [WAIT] ←/→: Slot | Tab: Switch | Space: Launch | P: Pause"

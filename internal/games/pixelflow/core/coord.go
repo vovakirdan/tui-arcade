@@ -3,7 +3,7 @@ package core
 import "fmt"
 
 // Coord represents a 2D coordinate on the grid.
-// X increases to the right, Y increases downward (screen coordinates).
+// X increases rightward, Y increases downward (screen coordinates).
 type Coord struct {
 	X int
 	Y int
@@ -14,7 +14,7 @@ func C(x, y int) Coord {
 	return Coord{X: x, Y: y}
 }
 
-// String returns a string representation of the coordinate.
+// String returns a string representation.
 func (c Coord) String() string {
 	return fmt.Sprintf("(%d,%d)", c.X, c.Y)
 }
@@ -24,31 +24,71 @@ func (c Coord) Add(dx, dy int) Coord {
 	return Coord{X: c.X + dx, Y: c.Y + dy}
 }
 
-// AddCoord returns the sum of two coordinates.
-func (c Coord) AddCoord(other Coord) Coord {
-	return Coord{X: c.X + other.X, Y: c.Y + other.Y}
-}
-
-// Step returns a new Coord one step in the given direction.
+// Step returns the coordinate one step in the given direction.
 func (c Coord) Step(d Dir) Coord {
 	dx, dy := d.Delta()
 	return c.Add(dx, dy)
 }
 
-// Equal returns true if two coordinates are the same.
+// Equal returns true if coordinates match.
 func (c Coord) Equal(other Coord) bool {
 	return c.X == other.X && c.Y == other.Y
 }
 
-// Manhattan returns the Manhattan distance to another coordinate.
-func (c Coord) Manhattan(other Coord) int {
-	dx := c.X - other.X
-	dy := c.Y - other.Y
-	if dx < 0 {
-		dx = -dx
+// Dir represents a direction for movement and shooting.
+type Dir uint8
+
+const (
+	DirUp Dir = iota
+	DirRight
+	DirDown
+	DirLeft
+)
+
+// String returns direction name.
+func (d Dir) String() string {
+	switch d {
+	case DirUp:
+		return "up"
+	case DirRight:
+		return "right"
+	case DirDown:
+		return "down"
+	case DirLeft:
+		return "left"
+	default:
+		return "unknown"
 	}
-	if dy < 0 {
-		dy = -dy
+}
+
+// Delta returns (dx, dy) for one step in this direction.
+func (d Dir) Delta() (int, int) {
+	switch d {
+	case DirUp:
+		return 0, -1
+	case DirRight:
+		return 1, 0
+	case DirDown:
+		return 0, 1
+	case DirLeft:
+		return -1, 0
+	default:
+		return 0, 0
 	}
-	return dx + dy
+}
+
+// Opposite returns the opposite direction.
+func (d Dir) Opposite() Dir {
+	switch d {
+	case DirUp:
+		return DirDown
+	case DirRight:
+		return DirLeft
+	case DirDown:
+		return DirUp
+	case DirLeft:
+		return DirRight
+	default:
+		return d
+	}
 }

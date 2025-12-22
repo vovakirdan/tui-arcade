@@ -1,133 +1,102 @@
 package core
 
-// Shooter represents a shooter that fires shots to remove pixels.
-// Shooters are positioned around the grid perimeter and fire inward.
+// Shooter represents a shooter in the deck or waiting slots.
+// Shooters have a color (only shoots their color) and ammo count.
 type Shooter struct {
 	ID    int   // Unique identifier
-	Pos   Coord // Starting position for the shot (outside grid or on border)
-	Dir   Dir   // Direction the shot travels
-	Color Color // The shooter only removes pixels of this color
+	Color Color // Shooter only removes pixels of this color
+	Ammo  int   // Number of shots remaining before disappearing
 }
 
-// MakeShooters creates n shooters deterministically placed around the grid perimeter.
-// The seed parameter is reserved for future randomness; currently ignored for determinism.
-// Shooters are placed evenly along the perimeter: top, right, bottom, left.
-// Each shooter points inward and cycles through colors.
-//
-// Placement policy:
-// - Shooters are placed one cell outside the grid boundary
-// - They fire inward toward the grid
-// - Distribution is roughly even across all four sides
-func MakeShooters(n int, seed uint64, gridW, gridH int) []Shooter {
-	if n <= 0 {
+// Clone returns a copy of the shooter.
+func (s Shooter) Clone() Shooter {
+	return Shooter{ID: s.ID, Color: s.Color, Ammo: s.Ammo}
+}
+
+// ActiveShooter represents a shooter currently on the rail.
+type ActiveShooter struct {
+	Shooter
+	RailIndex   int  // Current position on the rail
+	StartIndex  int  // Where this shooter entered the rail (for lap detection)
+	Dry         bool // When true, shooter won't fire until lap ends
+	LapProgress int  // Steps taken since entering rail
+}
+
+// Clone returns a copy of the active shooter.
+func (a ActiveShooter) Clone() ActiveShooter {
+	return ActiveShooter{
+		Shooter:     a.Shooter.Clone(),
+		RailIndex:   a.RailIndex,
+		StartIndex:  a.StartIndex,
+		Dry:         a.Dry,
+		LapProgress: a.LapProgress,
+	}
+}
+
+// HasCompletedLap returns true if the shooter has done a full loop.
+func (a ActiveShooter) HasCompletedLap(railLen int) bool {
+	return a.LapProgress >= railLen
+}
+
+// CloneDeck creates a deep copy of a shooter slice.
+func CloneDeck(deck []Shooter) []Shooter {
+	if deck == nil {
 		return nil
 	}
+	clone := make([]Shooter, len(deck))
+	for i, s := range deck {
+		clone[i] = s.Clone()
+	}
+	return clone
+}
 
-	// Generate perimeter positions
-	perimeter := generatePerimeterPositions(gridW, gridH)
-	if len(perimeter) == 0 {
+// CloneActive creates a deep copy of an active shooter slice.
+func CloneActive(active []ActiveShooter) []ActiveShooter {
+	if active == nil {
 		return nil
 	}
-
-	shooters := make([]Shooter, n)
-	colors := AllColors()
-
-	// Distribute shooters evenly across perimeter
-	step := len(perimeter) / n
-	if step < 1 {
-		step = 1
+	clone := make([]ActiveShooter, len(active))
+	for i, a := range active {
+		clone[i] = a.Clone()
 	}
+	return clone
+}
 
-	for i := 0; i < n; i++ {
-		idx := (i * step) % len(perimeter)
-		pos, dir := perimeter[idx].pos, perimeter[idx].dir
-		shooters[i] = Shooter{
-			ID:    i,
-			Pos:   pos,
-			Dir:   dir,
-			Color: colors[i%len(colors)],
+// DeckTotalAmmo returns total ammo across all shooters in deck.
+func DeckTotalAmmo(deck []Shooter) int {
+	total := 0
+	for _, s := range deck {
+		total += s.Ammo
+	}
+	return total
+}
+
+// DeckAmmoByColor returns ammo totals by color for a deck.
+func DeckAmmoByColor(deck []Shooter) map[Color]int {
+	counts := make(map[Color]int)
+	for _, s := range deck {
+		counts[s.Color] += s.Ammo
+	}
+	return counts
+}
+
+// DeckColors returns unique colors in deck (sorted).
+func DeckColors(deck []Shooter) []Color {
+	seen := make(map[Color]bool)
+	for _, s := range deck {
+		seen[s.Color] = true
+	}
+	colors := make([]Color, 0, len(seen))
+	for c := range seen {
+		colors = append(colors, c)
+	}
+	// Sort for determinism
+	for i := 0; i < len(colors)-1; i++ {
+		for j := i + 1; j < len(colors); j++ {
+			if colors[i] > colors[j] {
+				colors[i], colors[j] = colors[j], colors[i]
+			}
 		}
 	}
-
-	return shooters
-}
-
-// perimeterEntry holds a position and inward direction for shooter placement.
-type perimeterEntry struct {
-	pos Coord
-	dir Dir
-}
-
-// generatePerimeterPositions generates all perimeter positions around a grid.
-// Each position is one cell outside the grid, with direction pointing inward.
-func generatePerimeterPositions(w, h int) []perimeterEntry {
-	entries := make([]perimeterEntry, 0, 2*w+2*h)
-
-	// Top edge: shooters at y=-1, firing down
-	for x := 0; x < w; x++ {
-		entries = append(entries, perimeterEntry{
-			pos: C(x, -1),
-			dir: DirDown,
-		})
-	}
-
-	// Right edge: shooters at x=w, firing left
-	for y := 0; y < h; y++ {
-		entries = append(entries, perimeterEntry{
-			pos: C(w, y),
-			dir: DirLeft,
-		})
-	}
-
-	// Bottom edge: shooters at y=h, firing up (reversed for clockwise order)
-	for x := w - 1; x >= 0; x-- {
-		entries = append(entries, perimeterEntry{
-			pos: C(x, h),
-			dir: DirUp,
-		})
-	}
-
-	// Left edge: shooters at x=-1, firing right (reversed for clockwise order)
-	for y := h - 1; y >= 0; y-- {
-		entries = append(entries, perimeterEntry{
-			pos: C(-1, y),
-			dir: DirRight,
-		})
-	}
-
-	return entries
-}
-
-// MakeShooterAt creates a single shooter at a specific position.
-func MakeShooterAt(id int, pos Coord, dir Dir, color Color) Shooter {
-	return Shooter{
-		ID:    id,
-		Pos:   pos,
-		Dir:   dir,
-		Color: color,
-	}
-}
-
-// MakeShootersFromSpec creates shooters from a specification slice.
-// Each spec is (x, y, dir, colorIndex).
-// Useful for level-specific shooter configurations.
-func MakeShootersFromSpec(specs []ShooterSpec) []Shooter {
-	shooters := make([]Shooter, len(specs))
-	for i, spec := range specs {
-		shooters[i] = Shooter{
-			ID:    i,
-			Pos:   C(spec.X, spec.Y),
-			Dir:   spec.Dir,
-			Color: spec.Color,
-		}
-	}
-	return shooters
-}
-
-// ShooterSpec describes a shooter for level configuration.
-type ShooterSpec struct {
-	X     int
-	Y     int
-	Dir   Dir
-	Color Color
+	return colors
 }

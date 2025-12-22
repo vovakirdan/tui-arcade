@@ -13,8 +13,8 @@ type YAMLLevel struct {
 	ID       string            `yaml:"id"`
 	Name     string            `yaml:"name"`
 	Size     YAMLSize          `yaml:"size"`
+	Capacity int               `yaml:"capacity,omitempty"`
 	Pixels   []YAMLPixel       `yaml:"pixels"`
-	Shooters []YAMLShooter     `yaml:"shooters,omitempty"`
 	Metadata map[string]string `yaml:"metadata,omitempty"`
 }
 
@@ -28,33 +28,30 @@ type YAMLSize struct {
 type YAMLPixel struct {
 	X int    `yaml:"x"`
 	Y int    `yaml:"y"`
-	C string `yaml:"c"` // Color as string: "red", "green", etc.
+	C string `yaml:"c"` // Color as string
 }
 
-// YAMLShooter represents a shooter specification in YAML format.
-type YAMLShooter struct {
-	X   int    `yaml:"x"`
-	Y   int    `yaml:"y"`
-	Dir string `yaml:"dir"` // "up", "down", "left", "right"
-	C   string `yaml:"c"`   // Color
-}
-
-// Level represents a parsed level with all required data.
+// Level represents a parsed level ready for use.
 type Level struct {
 	ID       string
 	Name     string
 	Width    int
 	Height   int
+	Capacity int
 	Pixels   map[core.Coord]core.Color
-	Shooters []core.ShooterSpec
 	Metadata map[string]string
 }
 
-// ParseYAML parses a YAML level file and returns a Level struct.
+// ParseYAML parses a YAML level file.
 func ParseYAML(data []byte) (Level, error) {
 	var yl YAMLLevel
 	if err := yaml.Unmarshal(data, &yl); err != nil {
 		return Level{}, fmt.Errorf("yaml unmarshal: %w", err)
+	}
+
+	capacity := yl.Capacity
+	if capacity <= 0 {
+		capacity = 5 // Default capacity
 	}
 
 	level := Level{
@@ -62,6 +59,7 @@ func ParseYAML(data []byte) (Level, error) {
 		Name:     yl.Name,
 		Width:    yl.Size.W,
 		Height:   yl.Size.H,
+		Capacity: capacity,
 		Pixels:   make(map[core.Coord]core.Color),
 		Metadata: yl.Metadata,
 	}
@@ -70,45 +68,26 @@ func ParseYAML(data []byte) (Level, error) {
 	for _, p := range yl.Pixels {
 		color, ok := core.ParseColor(p.C)
 		if !ok {
-			// Skip invalid colors (assume inputs are valid per spec, but be robust)
-			continue
+			continue // Skip invalid colors
 		}
 		coord := core.C(p.X, p.Y)
 		level.Pixels[coord] = color
 	}
 
-	// Parse shooters if present
-	for _, s := range yl.Shooters {
-		dir := parseDir(s.Dir)
-		color, _ := core.ParseColor(s.C)
-		level.Shooters = append(level.Shooters, core.ShooterSpec{
-			X:     s.X,
-			Y:     s.Y,
-			Dir:   dir,
-			Color: color,
-		})
-	}
-
 	return level, nil
 }
 
-// parseDir converts a direction string to Dir enum.
-func parseDir(s string) core.Dir {
-	switch s {
-	case "up", "Up", "UP":
-		return core.DirUp
-	case "down", "Down", "DOWN":
-		return core.DirDown
-	case "left", "Left", "LEFT":
-		return core.DirLeft
-	case "right", "Right", "RIGHT":
-		return core.DirRight
-	default:
-		return core.DirDown // Default direction
-	}
-}
-
-// FormatExtensions returns the file extensions this parser handles.
+// FormatExtensions returns supported file extensions.
 func FormatExtensions() []string {
 	return []string{".yaml", ".yml"}
+}
+
+// ToGrid creates a Grid from the level data.
+func (l *Level) ToGrid() *core.Grid {
+	return core.NewGrid(l.Width, l.Height, l.Pixels)
+}
+
+// ToRail creates a Rail from the level dimensions.
+func (l *Level) ToRail() core.Rail {
+	return core.NewRail(l.Width, l.Height)
 }

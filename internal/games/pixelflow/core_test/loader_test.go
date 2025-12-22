@@ -9,7 +9,7 @@ import (
 	"github.com/vovakirdan/tui-arcade/internal/games/pixelflow/levels"
 )
 
-// getTestdataPath returns the path to testdata/levels relative to this test file.
+// getTestdataPath returns path to testdata/levels.
 func getTestdataPath() string {
 	_, filename, _, _ := runtime.Caller(0)
 	dir := filepath.Dir(filename)
@@ -24,7 +24,6 @@ func TestLoaderLoadAll(t *testing.T) {
 		t.Fatalf("LoadAll failed: %v", err)
 	}
 
-	// Should load at least 2 levels (level1.yaml and level2.yaml)
 	if len(lvls) < 2 {
 		t.Errorf("expected at least 2 levels, got %d", len(lvls))
 	}
@@ -37,79 +36,53 @@ func TestLoaderLoadAll(t *testing.T) {
 	}
 }
 
-func TestLoaderLoadLevel1(t *testing.T) {
+func TestLoaderLoadLevel01(t *testing.T) {
 	loader := levels.NewLoader(getTestdataPath())
 
-	lvl, err := loader.LoadByID("lvl_001")
+	lvl, err := loader.LoadByID("lvl01")
 	if err != nil {
 		t.Fatalf("LoadByID failed: %v", err)
 	}
 
-	// Check basic properties
-	if lvl.ID != "lvl_001" {
-		t.Errorf("expected ID 'lvl_001', got %q", lvl.ID)
+	if lvl.ID != "lvl01" {
+		t.Errorf("expected ID 'lvl01', got %q", lvl.ID)
 	}
-	if lvl.Name != "Warmup" {
-		t.Errorf("expected Name 'Warmup', got %q", lvl.Name)
+	if lvl.Name != "Intro" {
+		t.Errorf("expected Name 'Intro', got %q", lvl.Name)
 	}
 	if lvl.Width != 5 || lvl.Height != 5 {
 		t.Errorf("expected 5x5, got %dx%d", lvl.Width, lvl.Height)
 	}
-
-	// Check pixels
-	expectedPixels := map[core.Coord]core.Color{
-		core.C(2, 2): core.ColorRed,
-		core.C(3, 2): core.ColorRed,
-		core.C(2, 3): core.ColorGreen,
-		core.C(1, 1): core.ColorBlue,
+	if lvl.Capacity != 5 {
+		t.Errorf("expected capacity 5, got %d", lvl.Capacity)
 	}
 
-	if len(lvl.Pixels) != len(expectedPixels) {
-		t.Errorf("expected %d pixels, got %d", len(expectedPixels), len(lvl.Pixels))
-	}
-
-	for coord, expectedColor := range expectedPixels {
-		if color, ok := lvl.Pixels[coord]; !ok {
-			t.Errorf("missing pixel at %v", coord)
-		} else if color != expectedColor {
-			t.Errorf("at %v: expected %v, got %v", coord, expectedColor, color)
-		}
+	// Check pixel count
+	if len(lvl.Pixels) != 5 {
+		t.Errorf("expected 5 pixels, got %d", len(lvl.Pixels))
 	}
 }
 
-func TestLoaderLoadLevel2WithShooters(t *testing.T) {
+func TestLoaderLoadLevel02(t *testing.T) {
 	loader := levels.NewLoader(getTestdataPath())
 
-	lvl, err := loader.LoadByID("lvl_002")
+	lvl, err := loader.LoadByID("lvl02")
 	if err != nil {
 		t.Fatalf("LoadByID failed: %v", err)
 	}
 
-	// Check basic properties
-	if lvl.ID != "lvl_002" {
-		t.Errorf("expected ID 'lvl_002', got %q", lvl.ID)
+	if lvl.ID != "lvl02" {
+		t.Errorf("expected ID 'lvl02', got %q", lvl.ID)
 	}
-	if lvl.Width != 8 || lvl.Height != 8 {
-		t.Errorf("expected 8x8, got %dx%d", lvl.Width, lvl.Height)
-	}
-
-	// Check shooters are loaded
-	if len(lvl.Shooters) != 3 {
-		t.Errorf("expected 3 shooters, got %d", len(lvl.Shooters))
+	if lvl.Width != 10 || lvl.Height != 10 {
+		t.Errorf("expected 10x10, got %dx%d", lvl.Width, lvl.Height)
 	}
 
-	// Check first shooter
-	if len(lvl.Shooters) > 0 {
-		s := lvl.Shooters[0]
-		if s.X != 1 || s.Y != -1 {
-			t.Errorf("shooter 0: expected pos (1,-1), got (%d,%d)", s.X, s.Y)
-		}
-		if s.Dir != core.DirDown {
-			t.Errorf("shooter 0: expected dir Down, got %v", s.Dir)
-		}
-		if s.Color != core.ColorRed {
-			t.Errorf("shooter 0: expected color Red, got %v", s.Color)
-		}
+	// Should have multiple colors
+	grid := lvl.ToGrid()
+	colors := grid.ColorsPresent()
+	if len(colors) < 4 {
+		t.Errorf("expected at least 4 colors, got %d", len(colors))
 	}
 }
 
@@ -125,60 +98,41 @@ func TestLoaderNotFound(t *testing.T) {
 func TestLevelToGrid(t *testing.T) {
 	loader := levels.NewLoader(getTestdataPath())
 
-	lvl, err := loader.LoadByID("lvl_001")
+	lvl, err := loader.LoadByID("lvl01")
 	if err != nil {
 		t.Fatalf("LoadByID failed: %v", err)
 	}
 
 	g := lvl.ToGrid()
 
-	// Check grid dimensions
 	if g.W != lvl.Width || g.H != lvl.Height {
-		t.Errorf("grid dimensions mismatch: level %dx%d, grid %dx%d",
-			lvl.Width, lvl.Height, g.W, g.H)
+		t.Errorf("grid dimensions mismatch")
 	}
 
-	// Check filled count matches pixel count
 	if g.FilledCount() != len(lvl.Pixels) {
-		t.Errorf("filled count mismatch: level %d, grid %d",
-			len(lvl.Pixels), g.FilledCount())
+		t.Errorf("filled count mismatch: %d vs %d", g.FilledCount(), len(lvl.Pixels))
 	}
 
-	// Check a specific pixel
-	cell := g.Get(core.C(2, 2))
-	if !cell.Filled || cell.Color != core.ColorRed {
-		t.Errorf("expected red pixel at (2,2), got filled=%v color=%v",
-			cell.Filled, cell.Color)
+	// Check specific pixel
+	cell := g.Get(core.C(0, 0))
+	if !cell.Filled || cell.Color != core.ColorPink {
+		t.Errorf("expected pink at (0,0)")
 	}
 }
 
-func TestLevelMakeShootersDefault(t *testing.T) {
+func TestLevelToRail(t *testing.T) {
 	loader := levels.NewLoader(getTestdataPath())
 
-	// Level 1 has no shooters defined, should use defaults
-	lvl, err := loader.LoadByID("lvl_001")
+	lvl, err := loader.LoadByID("lvl01")
 	if err != nil {
 		t.Fatalf("LoadByID failed: %v", err)
 	}
 
-	shooters := lvl.MakeShooters(3)
-	if len(shooters) != 3 {
-		t.Errorf("expected 3 default shooters, got %d", len(shooters))
-	}
-}
+	rail := lvl.ToRail()
 
-func TestLevelMakeShootersFromSpec(t *testing.T) {
-	loader := levels.NewLoader(getTestdataPath())
-
-	// Level 2 has shooters defined
-	lvl, err := loader.LoadByID("lvl_002")
-	if err != nil {
-		t.Fatalf("LoadByID failed: %v", err)
-	}
-
-	shooters := lvl.MakeShooters(5) // param ignored when level has specs
-	if len(shooters) != 3 {
-		t.Errorf("expected 3 shooters from spec, got %d", len(shooters))
+	expectedLen := 2 * (lvl.Width + lvl.Height)
+	if rail.Len() != expectedLen {
+		t.Errorf("expected rail length %d, got %d", expectedLen, rail.Len())
 	}
 }
 
@@ -205,15 +159,64 @@ func TestLoaderListIDs(t *testing.T) {
 func TestLoaderDeterministicOrder(t *testing.T) {
 	loader := levels.NewLoader(getTestdataPath())
 
-	// Load multiple times
 	lvls1, _ := loader.LoadAll()
 	lvls2, _ := loader.LoadAll()
-	lvls3, _ := loader.LoadAll()
 
-	// Order should be the same each time
 	for i := range lvls1 {
-		if lvls1[i].ID != lvls2[i].ID || lvls1[i].ID != lvls3[i].ID {
-			t.Errorf("level order not deterministic at index %d", i)
+		if lvls1[i].ID != lvls2[i].ID {
+			t.Errorf("order not deterministic at %d", i)
+		}
+	}
+}
+
+func TestLevelNewState(t *testing.T) {
+	loader := levels.NewLoader(getTestdataPath())
+
+	lvl, err := loader.LoadByID("lvl01")
+	if err != nil {
+		t.Fatalf("LoadByID failed: %v", err)
+	}
+
+	deck := []core.Shooter{
+		{ID: 0, Color: core.ColorPink, Ammo: 2},
+	}
+
+	state := lvl.NewState(deck)
+
+	if state.Capacity != lvl.Capacity {
+		t.Errorf("state capacity mismatch")
+	}
+	if len(state.Deck) != 1 {
+		t.Errorf("expected 1 shooter in deck")
+	}
+	if state.Grid.FilledCount() != len(lvl.Pixels) {
+		t.Errorf("grid pixel count mismatch")
+	}
+}
+
+func TestColorParsing(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected core.Color
+		ok       bool
+	}{
+		{"pink", core.ColorPink, true},
+		{"PINK", core.ColorPink, true},
+		{"p", core.ColorPink, true},
+		{"cyan", core.ColorCyan, true},
+		{"green", core.ColorGreen, true},
+		{"yellow", core.ColorYellow, true},
+		{"purple", core.ColorPurple, true},
+		{"invalid", core.ColorPink, false},
+	}
+
+	for _, tc := range tests {
+		color, ok := core.ParseColor(tc.input)
+		if ok != tc.ok {
+			t.Errorf("ParseColor(%q): expected ok=%v, got %v", tc.input, tc.ok, ok)
+		}
+		if tc.ok && color != tc.expected {
+			t.Errorf("ParseColor(%q): expected %v, got %v", tc.input, tc.expected, color)
 		}
 	}
 }

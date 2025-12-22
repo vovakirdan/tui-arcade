@@ -13,43 +13,44 @@ import (
 	"github.com/vovakirdan/tui-arcade/internal/games/pixelflow/levels/formats"
 )
 
-// Level represents a complete level definition ready for gameplay.
+// Level represents a complete level definition.
 type Level struct {
 	ID       string
 	Name     string
 	Width    int
 	Height   int
+	Capacity int
 	Pixels   map[core.Coord]core.Color
-	Shooters []core.ShooterSpec
 	Metadata map[string]string
-	FilePath string // Original file path (for debugging)
+	FilePath string
 }
 
-// ToGrid creates a new Grid from this level's pixel data.
+// ToGrid creates a Grid from the level.
 func (l *Level) ToGrid() *core.Grid {
 	return core.NewGrid(l.Width, l.Height, l.Pixels)
 }
 
-// MakeShooters creates shooters for this level.
-// If the level has shooter specs, use those; otherwise generate default shooters.
-func (l *Level) MakeShooters(defaultCount int) []core.Shooter {
-	if len(l.Shooters) > 0 {
-		return core.MakeShootersFromSpec(l.Shooters)
-	}
-	return core.MakeShooters(defaultCount, 0, l.Width, l.Height)
+// ToRail creates a Rail from the level dimensions.
+func (l *Level) ToRail() core.Rail {
+	return core.NewRail(l.Width, l.Height)
+}
+
+// NewState creates a game state from this level with the given deck.
+func (l *Level) NewState(deck []core.Shooter) *core.State {
+	return core.NewState(l.ToGrid(), deck, l.Capacity)
 }
 
 // Loader handles loading levels from a directory.
 type Loader struct {
-	Root string // Root directory for level files
+	Root string
 }
 
-// NewLoader creates a new level loader for the given root directory.
+// NewLoader creates a new level loader.
 func NewLoader(root string) *Loader {
 	return &Loader{Root: root}
 }
 
-// LoadAll recursively scans the root directory and loads all level files.
+// LoadAll recursively scans and loads all level files.
 // Returns levels sorted by ID for deterministic ordering.
 func (l *Loader) LoadAll() ([]Level, error) {
 	var levels []Level
@@ -59,22 +60,18 @@ func (l *Loader) LoadAll() ([]Level, error) {
 			return err
 		}
 
-		// Skip directories
 		if d.IsDir() {
 			return nil
 		}
 
-		// Check for supported extensions
 		ext := strings.ToLower(filepath.Ext(path))
 		if !isSupportedExtension(ext) {
 			return nil
 		}
 
-		// Load and parse the file
 		level, err := l.LoadFile(path)
 		if err != nil {
-			// Log warning but continue with other files
-			// In production, you might want to handle this differently
+			// Skip invalid files
 			return nil
 		}
 
@@ -86,7 +83,7 @@ func (l *Loader) LoadAll() ([]Level, error) {
 		return nil, fmt.Errorf("walking directory %s: %w", l.Root, err)
 	}
 
-	// Sort by ID for deterministic ordering
+	// Sort by ID for determinism
 	sort.Slice(levels, func(i, j int) bool {
 		return levels[i].ID < levels[j].ID
 	})
@@ -112,36 +109,14 @@ func (l *Loader) LoadFile(path string) (Level, error) {
 		Name:     parsed.Name,
 		Width:    parsed.Width,
 		Height:   parsed.Height,
+		Capacity: parsed.Capacity,
 		Pixels:   parsed.Pixels,
-		Shooters: parsed.Shooters,
 		Metadata: parsed.Metadata,
 		FilePath: path,
 	}, nil
 }
 
-// isSupportedExtension checks if the file extension is supported.
-func isSupportedExtension(ext string) bool {
-	supported := formats.FormatExtensions()
-	for _, s := range supported {
-		if ext == s {
-			return true
-		}
-	}
-	return false
-}
-
-// parseByExtension parses file data based on extension.
-func parseByExtension(data []byte, ext string) (formats.Level, error) {
-	switch ext {
-	case ".yaml", ".yml":
-		return formats.ParseYAML(data)
-	default:
-		return formats.Level{}, fmt.Errorf("unsupported file extension: %s", ext)
-	}
-}
-
-// LoadByID loads a specific level by its ID.
-// Returns an error if not found.
+// LoadByID loads a specific level by ID.
 func (l *Loader) LoadByID(id string) (Level, error) {
 	levels, err := l.LoadAll()
 	if err != nil {
@@ -157,7 +132,7 @@ func (l *Loader) LoadByID(id string) (Level, error) {
 	return Level{}, fmt.Errorf("level not found: %s", id)
 }
 
-// ListIDs returns all available level IDs in sorted order.
+// ListIDs returns all level IDs in sorted order.
 func (l *Loader) ListIDs() ([]string, error) {
 	levels, err := l.LoadAll()
 	if err != nil {
@@ -169,4 +144,24 @@ func (l *Loader) ListIDs() ([]string, error) {
 		ids[i] = lvl.ID
 	}
 	return ids, nil
+}
+
+// isSupportedExtension checks if extension is supported.
+func isSupportedExtension(ext string) bool {
+	for _, supported := range formats.FormatExtensions() {
+		if ext == supported {
+			return true
+		}
+	}
+	return false
+}
+
+// parseByExtension routes to the correct parser.
+func parseByExtension(data []byte, ext string) (formats.Level, error) {
+	switch ext {
+	case ".yaml", ".yml":
+		return formats.ParseYAML(data)
+	default:
+		return formats.Level{}, fmt.Errorf("unsupported extension: %s", ext)
+	}
 }

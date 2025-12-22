@@ -47,6 +47,8 @@ func (km *KeyMapper) MapKey(msg tea.KeyMsg) (action core.Action, isQuit bool) {
 		return core.ActionPause, false
 	case "r":
 		return core.ActionRestart, false
+	case "tab":
+		return core.ActionTab, false
 	}
 
 	return core.ActionNone, false

@@ -92,8 +92,11 @@ func (s *State) StepTick() StepResult {
 						Color:     hitColor,
 					})
 				} else {
-					// Color mismatch: become dry
-					shooter.Dry = true
+					// Color mismatch: become dry, but only if not on first lap
+					// This gives shooter a chance to find its pixels on first lap
+					if shooter.LapProgress > 0 {
+						shooter.Dry = true
+					}
 					result.DryEvents = append(result.DryEvents, DryEvent{
 						ShooterID:    shooter.ID,
 						BlockedBy:    hitColor,

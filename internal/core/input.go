@@ -38,6 +38,7 @@ const (
 	ActionRestart        // R key - restart game after game over
 	ActionQuit           // Q, Ctrl+C - exit game/session
 	ActionPause          // P, Escape - pause/unpause game
+	ActionTab            // Tab - switch focus/cycle selection
 )
 
 // String returns a human-readable name for the action.
@@ -67,6 +68,8 @@ func (a Action) String() string {
 		return "Quit"
 	case ActionPause:
 		return "Pause"
+	case ActionTab:
+		return "Tab"
 	default:
 		return "Unknown"
 	}

@@ -79,18 +79,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Map key to action
-	switch msg.String() {
-	case " ", "up", "w":
-		m.inputFrame.Set(core.ActionJump)
-	case "down", "s":
-		m.inputFrame.Set(core.ActionDuck)
-	case "p", "esc":
-		m.inputFrame.Set(core.ActionPause)
-	case "r":
-		if m.gameState.GameOver {
-			m.inputFrame.Set(core.ActionRestart)
+	// Use KeyMapper for consistent key bindings
+	km := NewKeyMapper()
+	action, _ := km.MapKey(msg)
+	if action != core.ActionNone {
+		// Special handling for restart (only when game over)
+		if action == core.ActionRestart && !m.gameState.GameOver {
+			return m, nil
 		}
+		m.inputFrame.Set(action)
 	}
 
 	return m, nil

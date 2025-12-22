@@ -125,8 +125,10 @@ func TestShootRemovesMatchingPixel(t *testing.T) {
 }
 
 func TestShootBecomesDryOnWrongColor(t *testing.T) {
+	// Put cyan pixels at multiple positions so shooter hits wrong color on 2nd step
 	pixels := map[core.Coord]core.Color{
-		core.C(0, 0): core.ColorCyan, // Pink shooter will hit cyan first
+		core.C(0, 0): core.ColorCyan, // Pink shooter will hit cyan
+		core.C(1, 0): core.ColorCyan, // Also at position 1
 	}
 	g := core.NewGrid(3, 3, pixels)
 
@@ -136,12 +138,18 @@ func TestShootBecomesDryOnWrongColor(t *testing.T) {
 
 	state.LaunchTop()
 
-	// Step once - shooter at position 0 shoots down at (0,0) which has cyan
-	result := state.StepTick()
+	// First step - shooter at position 0 hits cyan but doesn't become dry
+	// (first lap grace period)
+	result1 := state.StepTick()
+	_ = result1
 
-	// Should have a dry event
-	if len(result.DryEvents) == 0 {
-		t.Error("expected dry event when hitting wrong color")
+	// Second step - shooter at position 1 hits cyan, should become dry now
+	// because LapProgress > 0
+	result2 := state.StepTick()
+
+	// Should have a dry event on second step
+	if len(result2.DryEvents) == 0 {
+		t.Error("expected dry event when hitting wrong color after first position")
 	}
 
 	// Shooter should be dry

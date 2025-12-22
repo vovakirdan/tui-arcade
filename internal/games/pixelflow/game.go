@@ -265,12 +265,13 @@ func (g *Game) Step(input platformcore.InputFrame) platformcore.StepResult {
 		return platformcore.StepResult{State: g.State()}
 	}
 
-	// Handle selection navigation
-	if input.Has(platformcore.ActionUp) {
-		g.focus = FocusDeck
-	}
-	if input.Has(platformcore.ActionDown) {
-		g.focus = FocusWaiting
+	// Handle focus switching with Tab
+	if input.Has(platformcore.ActionTab) {
+		if g.focus == FocusDeck {
+			g.focus = FocusWaiting
+		} else {
+			g.focus = FocusDeck
+		}
 	}
 	if input.Has(platformcore.ActionLeft) {
 		if g.focus == FocusDeck {
@@ -383,9 +384,9 @@ func (g *Game) renderHUD(dst *platformcore.Screen) {
 	// Controls hint
 	var controls string
 	if g.focus == FocusDeck {
-		controls = " [DECK] ←/→: Queue | ↑/↓: Focus | Space: Launch | P: Pause"
+		controls = " [DECK] ←/→: Queue | Tab: Switch | Space: Launch | P: Pause"
 	} else {
-		controls = " [WAIT] ←/→: Slot | ↑/↓: Focus | Space: Launch | P: Pause"
+		controls = " [WAIT] ←/→: Slot | Tab: Switch | Space: Launch | P: Pause"
 	}
 	dst.DrawTextWithColor(0, 2, controls, platformcore.ColorGray)
 

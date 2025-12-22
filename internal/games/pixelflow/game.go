@@ -37,13 +37,15 @@ type Game struct {
 	screenH int
 
 	// Status
-	tick         uint64
-	score        int
-	gameOver     bool
-	won          bool
-	paused       bool
-	tooSmall     bool
-	autoTickRate int // Ticks between auto simulation steps
+	tick           uint64
+	score          int
+	gameOver       bool
+	won            bool
+	paused         bool
+	tooSmall       bool
+	levelComplete  bool // Show level completion screen
+	levelJustWon   int  // Which level was just completed (1-indexed)
+	autoTickRate   int  // Ticks between auto simulation steps
 
 	// Selection state
 	focus         FocusArea // Current focus (deck or waiting)
@@ -63,12 +65,14 @@ type Game struct {
 
 // Package-level variables for configuration
 var (
-	selectedStartLevel int
+	selectedStartLevel    int
+	startLevelConsumed    bool // true after first Reset() uses the level
 )
 
 // SetStartLevel sets the starting level (1-indexed). 0 means start from beginning.
 func SetStartLevel(level int) {
 	selectedStartLevel = level
+	startLevelConsumed = false // Mark as not yet used
 }
 
 // GetStartLevel returns the currently selected start level.
@@ -123,6 +127,8 @@ func (g *Game) Reset(cfg platformcore.RuntimeConfig) {
 	g.gameOver = false
 	g.won = false
 	g.paused = false
+	g.levelComplete = false
+	g.levelJustWon = 0
 	g.focus = FocusDeck
 	g.selectedQueue = 0
 	g.selectedSlot = 0
@@ -136,13 +142,16 @@ func (g *Game) Reset(cfg platformcore.RuntimeConfig) {
 	}
 	g.allLevels = allLevels
 
-	// Apply selected start level
-	if selectedStartLevel > 0 && selectedStartLevel <= len(allLevels) {
-		g.levelIndex = selectedStartLevel - 1
-		selectedStartLevel = 0 // Reset after use
-	} else {
-		g.levelIndex = 0
+	// Apply selected start level (only on first Reset, not on resize)
+	if !startLevelConsumed {
+		if selectedStartLevel > 0 && selectedStartLevel <= len(allLevels) {
+			g.levelIndex = selectedStartLevel - 1
+		} else {
+			g.levelIndex = 0
+		}
+		startLevelConsumed = true
 	}
+	// Otherwise keep current g.levelIndex (from resize or level progression)
 
 	g.loadCurrentLevel()
 }
@@ -255,6 +264,15 @@ func (g *Game) Step(input platformcore.InputFrame) platformcore.StepResult {
 		return platformcore.StepResult{State: g.State()}
 	}
 
+	// Handle level complete screen - press any action to continue
+	if g.levelComplete {
+		if input.Has(platformcore.ActionConfirm) || input.Has(platformcore.ActionJump) {
+			g.levelComplete = false
+			g.loadCurrentLevel()
+		}
+		return platformcore.StepResult{State: g.State()}
+	}
+
 	// Handle pause toggle
 	if input.Has(platformcore.ActionPause) {
 		g.paused = !g.paused
@@ -319,12 +337,14 @@ func (g *Game) Step(input platformcore.InputFrame) platformcore.StepResult {
 
 	// Check win/lose conditions
 	if g.state.IsWon() {
+		g.levelJustWon = g.levelIndex + 1 // Store 1-indexed level number
 		g.levelIndex++
 		if g.levelIndex >= len(g.allLevels) {
 			g.won = true
 			g.gameOver = true
 		} else {
-			g.loadCurrentLevel()
+			// Show level complete screen instead of immediately loading next
+			g.levelComplete = true
 		}
 	} else if g.state.IsLost() {
 		g.gameOver = true
@@ -363,6 +383,8 @@ func (g *Game) Render(dst *platformcore.Screen) {
 		g.renderOverlay(dst, "You Win!", "All levels cleared!")
 	case g.gameOver:
 		g.renderOverlay(dst, "Game Over", "Press R to restart")
+	case g.levelComplete:
+		g.renderOverlay(dst, "Level "+itoa(g.levelJustWon)+" Complete!", "Press Space to continue")
 	case g.paused:
 		g.renderOverlay(dst, "Paused", "Press P to continue")
 	}

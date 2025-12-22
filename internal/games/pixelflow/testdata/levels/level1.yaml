@@ -1,0 +1,13 @@
+id: "lvl_001"
+name: "Warmup"
+size:
+  w: 5
+  h: 5
+pixels:
+  - { x: 2, y: 2, c: "red" }
+  - { x: 3, y: 2, c: "red" }
+  - { x: 2, y: 3, c: "green" }
+  - { x: 1, y: 1, c: "blue" }
+metadata:
+  difficulty: "easy"
+  author: "test"

@@ -1,0 +1,29 @@
+id: "lvl_002"
+name: "Color Maze"
+size:
+  w: 8
+  h: 8
+pixels:
+  # Row of red pixels
+  - { x: 1, y: 1, c: "red" }
+  - { x: 2, y: 1, c: "red" }
+  - { x: 3, y: 1, c: "red" }
+  # Green diagonal
+  - { x: 4, y: 2, c: "green" }
+  - { x: 5, y: 3, c: "green" }
+  - { x: 6, y: 4, c: "green" }
+  # Blue cluster
+  - { x: 2, y: 5, c: "blue" }
+  - { x: 3, y: 5, c: "blue" }
+  - { x: 2, y: 6, c: "blue" }
+  - { x: 3, y: 6, c: "blue" }
+  # Yellow and Purple scattered
+  - { x: 0, y: 3, c: "yellow" }
+  - { x: 7, y: 7, c: "purple" }
+shooters:
+  - { x: 1, y: -1, dir: "down", c: "red" }
+  - { x: 8, y: 3, dir: "left", c: "green" }
+  - { x: 2, y: 8, dir: "up", c: "blue" }
+metadata:
+  difficulty: "medium"
+  author: "test"

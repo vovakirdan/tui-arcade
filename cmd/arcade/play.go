@@ -11,6 +11,7 @@ import (
 	"github.com/vovakirdan/tui-arcade/internal/games/breakout"
 	"github.com/vovakirdan/tui-arcade/internal/games/dino"
 	"github.com/vovakirdan/tui-arcade/internal/games/flappy"
+	"github.com/vovakirdan/tui-arcade/internal/games/pixelflow"
 	"github.com/vovakirdan/tui-arcade/internal/games/snake"
 	"github.com/vovakirdan/tui-arcade/internal/games/t2048"
 	"github.com/vovakirdan/tui-arcade/internal/platform/tui"
@@ -158,6 +159,25 @@ func runPlay(cmd *cobra.Command, args []string) {
 		}
 		if t2048Selection.Level > 0 {
 			t2048.SetStartLevel(t2048Selection.Level)
+		}
+
+	case "pixelflow":
+		// Show PixelFlow level selector
+		pfSelection, updatedCfg, pfErr := tui.RunPixelFlowLevelSelector(cfg)
+		if pfErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", pfErr)
+			os.Exit(1)
+		}
+		cfg = updatedCfg
+
+		// User pressed back or quit
+		if pfSelection == nil {
+			return
+		}
+
+		// Apply selection
+		if pfSelection.Level > 0 {
+			pixelflow.SetStartLevel(pfSelection.Level)
 		}
 	}
 

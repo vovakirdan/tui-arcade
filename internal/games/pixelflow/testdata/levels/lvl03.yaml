@@ -1,0 +1,80 @@
+id: "lvl03"
+name: "Hollow Square"
+size:
+  w: 10
+  h: 10
+capacity: 5
+pixels:
+  # Pink blocks - left side forming thick "C" shape
+  # Left edge and top-left corner
+  - { x: 0, y: 0, c: "pink" }
+  - { x: 1, y: 0, c: "pink" }
+  - { x: 0, y: 1, c: "pink" }
+  - { x: 1, y: 1, c: "pink" }
+  - { x: 0, y: 2, c: "pink" }
+  - { x: 1, y: 2, c: "pink" }
+  
+  # Left side vertical
+  - { x: 0, y: 3, c: "pink" }
+  - { x: 1, y: 3, c: "pink" }
+  - { x: 0, y: 4, c: "pink" }
+  - { x: 1, y: 4, c: "pink" }
+  - { x: 0, y: 5, c: "pink" }
+  - { x: 1, y: 5, c: "pink" }
+  - { x: 0, y: 6, c: "pink" }
+  - { x: 1, y: 6, c: "pink" }
+  
+  # Bottom-left corner
+  - { x: 0, y: 7, c: "pink" }
+  - { x: 1, y: 7, c: "pink" }
+  - { x: 0, y: 8, c: "pink" }
+  - { x: 1, y: 8, c: "pink" }
+  - { x: 0, y: 9, c: "pink" }
+  - { x: 1, y: 9, c: "pink" }
+  
+  # Top-left extension
+  - { x: 2, y: 0, c: "pink" }
+  - { x: 2, y: 1, c: "pink" }
+  
+  # Bottom-left extension
+  - { x: 2, y: 8, c: "pink" }
+  - { x: 2, y: 9, c: "pink" }
+  
+  # Cyan blocks - right side forming thick "C" shape
+  # Right edge and top-right corner
+  - { x: 8, y: 0, c: "cyan" }
+  - { x: 9, y: 0, c: "cyan" }
+  - { x: 8, y: 1, c: "cyan" }
+  - { x: 9, y: 1, c: "cyan" }
+  - { x: 8, y: 2, c: "cyan" }
+  - { x: 9, y: 2, c: "cyan" }
+  
+  # Right side vertical
+  - { x: 8, y: 3, c: "cyan" }
+  - { x: 9, y: 3, c: "cyan" }
+  - { x: 8, y: 4, c: "cyan" }
+  - { x: 9, y: 4, c: "cyan" }
+  - { x: 8, y: 5, c: "cyan" }
+  - { x: 9, y: 5, c: "cyan" }
+  - { x: 8, y: 6, c: "cyan" }
+  - { x: 9, y: 6, c: "cyan" }
+  
+  # Bottom-right corner
+  - { x: 8, y: 7, c: "cyan" }
+  - { x: 9, y: 7, c: "cyan" }
+  - { x: 8, y: 8, c: "cyan" }
+  - { x: 9, y: 8, c: "cyan" }
+  - { x: 8, y: 9, c: "cyan" }
+  - { x: 9, y: 9, c: "cyan" }
+  
+  # Top-right extension
+  - { x: 7, y: 0, c: "cyan" }
+  - { x: 7, y: 1, c: "cyan" }
+  
+  # Bottom-right extension
+  - { x: 7, y: 8, c: "cyan" }
+  - { x: 7, y: 9, c: "cyan" }
+metadata:
+  difficulty: "medium"
+  author: "test"
+
